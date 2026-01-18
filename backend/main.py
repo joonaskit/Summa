@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import os
 
-app = FastAPI(title="Schoolwork Gatherer API")
+app = FastAPI(title="Summa API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +44,7 @@ class HedgeDocHistoryRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "Schoolwork Gatherer API is running"}
+    return {"message": "Summa API is running"}
 
 @app.get("/files")
 def get_local_files():

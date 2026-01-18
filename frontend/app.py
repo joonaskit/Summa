@@ -5,9 +5,9 @@ import os
 # Configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="Schoolwork Gatherer", layout="wide")
+st.set_page_config(page_title="Summa", layout="wide")
 
-st.title("📚 Schoolwork Gatherer")
+st.title("📚 Summa")
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
