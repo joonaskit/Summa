@@ -6,7 +6,17 @@ from pydantic import BaseModel
 from typing import List, Optional
 import os
 
-app = FastAPI(title="Summa API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    db_manager.init_db()
+    yield
+    # Shutdown
+    db_manager.close()
+
+app = FastAPI(title="Summa API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,7 +34,7 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://host.docker.internal:1234/v1")
 
 # Initialize Database
 db_manager = DatabaseManager(DB_PATH)
-db_manager.init_db()
+# db_manager.init_db() remove this top level call
 
 local_service = LocalFileService(root_dir=DATA_DIR, db_manager=db_manager)
 hedgedoc_service = HedgeDocService()
@@ -128,3 +138,48 @@ def get_file_summary(path: str):
     if not summary:
         raise HTTPException(status_code=404, detail="Summary not found")
     return summary
+
+class TagCreate(BaseModel):
+    name: str
+
+class FileTagUpdate(BaseModel):
+    path: str
+    tags: List[str]
+
+@app.get("/tags")
+def get_tags():
+    """Get all available tags."""
+    return db_manager.get_all_tags()
+
+@app.post("/tags")
+def create_tag(tag: TagCreate):
+    """Create a new tag."""
+    db_manager.add_tag(tag.name)
+    return {"message": "Tag created"}
+
+@app.delete("/tags/{name}")
+def delete_tag(name: str):
+    """Delete a tag."""
+    db_manager.delete_tag(name)
+    return {"message": "Tag deleted"}
+
+@app.post("/files/tags")
+def update_file_tags(update: FileTagUpdate):
+    """Update tags for a file."""
+    print(f"DEBUG: Endpoint update_file_tags called with path={update.path} tags={update.tags}")
+    
+    # Ensure all tags are registered in the global 'tags' table
+    for tag in update.tags:
+        db_manager.add_tag(tag)
+    
+    db_manager.update_file_tags(update.path, update.tags)
+    return {"message": "Tags updated"}
+
+@app.post("/files/suggest_tags")
+def suggest_tags(request: SummaryRequest):
+    """Generate tag suggestions for a file using LLM."""
+    # Reusing SummaryRequest since it just needs path
+    result = llm_service.process_file_tags(request.path)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result

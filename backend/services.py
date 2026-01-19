@@ -50,6 +50,7 @@ class LocalFileService:
                             size=stat.st_size,
                             file_type=file_type
                         )
+                        file_info["tags"] = self.db_manager.get_file_tags(rel_path)
         return files_data
 
     def _match_ext(self, filename, extensions):
@@ -254,7 +255,7 @@ class GitHubService:
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from typing import Iterator
+from typing import Iterator, List
 
 class LLMService:
     def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", db_manager=None, local_file_service=None):
@@ -362,3 +363,47 @@ class LLMService:
             tags=[],
             model="local-llm"
         )
+        
+    def generate_tags(self, content: str) -> List[str]:
+        """Generates tag suggestions for the given text content."""
+        try:
+            # Fetch existing tags
+            existing_tags = []
+            if self.db_manager:
+                existing_tags = self.db_manager.get_all_tags()
+            
+            existing_tags_str = ", ".join(existing_tags) if existing_tags else "None"
+
+            messages = [
+                SystemMessage(content=f"You are a helpful assistant that analyzes documents and suggests meaningful tags. You have access to the following existing tags: [{existing_tags_str}]. Prioritize using these tags if they are relevant, but you may create new ones if necessary. Provide only a comma-separated list of 3-5 tags. Do not include any other text."),
+                HumanMessage(content=f"Please suggest tags for the following document:\n\n{content[:5000]}")
+            ]
+            response = self.llm.invoke(messages)
+            # Parse response
+            raw_tags = response.content.strip()
+            # Split by comma and clean
+            tags = [t.strip() for t in raw_tags.split(',') if t.strip()]
+            return tags[:5] # Limit to 5
+        except Exception as e:
+            return []
+
+    def process_file_tags(self, path: str):
+        """Generates tags for a file."""
+        if not self.local_file_service:
+             return {"error": "Services not fully initialized"}
+
+        # 1. Get Content
+        file_data = self.local_file_service.get_content(path)
+        if "error" in file_data:
+            return file_data
+        
+        if file_data.get("type") != "text":
+             return {"error": "Only text files can be processed."}
+            
+        content = file_data.get("content")
+        if not content:
+             return {"error": "File is empty."}
+
+        # 2. Generate Tags
+        tags = self.generate_tags(content)
+        return {"tags": tags}

@@ -21,6 +21,41 @@ if page == "Local Files":
             files = response.json()
             files = response.json()
             
+            # --- Tag Management ---
+            with st.expander("Manage Tags"):
+                st.subheader("Available Tags")
+                try:
+                    tags_resp = requests.get(f"{API_URL}/tags")
+                    if tags_resp.status_code == 200:
+                        all_tags = tags_resp.json()
+                        
+                        # Create new tag
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            new_tag = st.text_input("New Tag Name")
+                        with c2:
+                            if st.button("Add Tag"):
+                                if new_tag:
+                                    requests.post(f"{API_URL}/tags", json={"name": new_tag})
+                                    st.rerun()
+                        
+                        # List and delete tags
+                        st.write("Existing Tags:")
+                        for t in all_tags:
+                            col_t1, col_t2 = st.columns([4, 1])
+                            with col_t1:
+                                st.code(t)
+                            with col_t2:
+                                if st.button("🗑️", key=f"del_tag_{t}"):
+                                    requests.delete(f"{API_URL}/tags/{t}")
+                                    st.rerun()
+                    else:
+                        st.error("Could not fetch tags")
+                        all_tags = []
+                except Exception as e:
+                    st.error(f"Error fetching tags: {e}")
+                    all_tags = []
+
             # File Uploader
             with st.expander("Upload New File"):
                 uploaded_file = st.file_uploader("Choose a file", type=['md', 'txt', 'pdf', 'docx', 'pptx'])
@@ -51,6 +86,59 @@ if page == "Local Files":
                         with col2:
                             st.write(f"**Modified:** {file_data.get('modified', 'N/A')}")
                         
+                        # Tags Section
+                        # Ensure all_tags is available (it should be from Manage Tags section)
+                        # We use st.multiselect for editing
+                        current_tags = file_data.get('tags', [])
+                        # Filter current_tags to ensure they exist in all_tags (optional, but good for UI consistency if tags were deleted)
+                        valid_current = [t for t in current_tags if t in all_tags]
+                        # If a tag is assigned but not in all_tags (e.g. deleted), we might want to show it or not. 
+                        # st.multiselect will error if default contains items not in options.
+                        # So we unite them or filter. Lets unite.
+                        # Actually if we want to allow users to see "deleted" tags on files, we should add them to options.
+                        # But for now, let's just use valid_current to avoid errors.
+                        
+                        selected_tags = st.multiselect("Tags", options=all_tags, default=valid_current, key=f"tags_{file_data['path']}")
+                        if st.button("Save Tags", key=f"mtag_{file_data['path']}"):
+                             requests.post(f"{API_URL}/files/tags", json={"path": file_data["path"], "tags": selected_tags})
+                             st.success("Tags saved")
+                             st.rerun()
+
+                        # Suggest Tags Button
+                        if st.button("✨ Suggest Tags", key=f"suggest_{file_data['path']}"):
+                             with st.spinner("Asking AI for tags..."):
+                                 try:
+                                     s_resp = requests.post(f"{API_URL}/files/suggest_tags", json={"path": file_data["path"]})
+                                     if s_resp.status_code == 200:
+                                         suggestions = s_resp.json().get("tags", [])
+                                         st.session_state[f"suggestions_{file_data['path']}"] = suggestions
+                                     else:
+                                         st.error(f"Error: {s_resp.text}")
+                                 except Exception as e:
+                                     st.error(f"Error: {e}")
+
+                        # Display suggestions if they exist in session state
+                        if f"suggestions_{file_data['path']}" in st.session_state:
+                            suggestions = st.session_state[f"suggestions_{file_data['path']}"]
+                            if suggestions:
+                                st.info(f"Suggested: {', '.join(suggestions)}")
+                                if st.button("Apply Suggestions", key=f"apply_{file_data['path']}"):
+                                     # Merge with current
+                                     new_tags = list(set(current_tags + suggestions))
+                                     u_resp = requests.post(f"{API_URL}/files/tags", json={"path": file_data["path"], "tags": new_tags})
+                                     if u_resp.status_code == 200:
+                                          st.success("Suggestions applied!")
+                                          # Clear suggestions after applying
+                                          del st.session_state[f"suggestions_{file_data['path']}"]
+                                          st.rerun()
+                                     else:
+                                          st.error(f"Failed to apply tags: {u_resp.text}")
+                            else:
+                                st.warning("No suggestions generated.")
+                                if st.button("Clear", key=f"clear_sugg_{file_data['path']}"):
+                                    del st.session_state[f"suggestions_{file_data['path']}"]
+                                    st.rerun()
+                        
                         if st.button(f"View Content {file_data['name']}", key=file_data['path']):
                              # Fetch content
                              content_resp = requests.get(f"{API_URL}/files/content", params={"path": file_data["path"]})
@@ -75,8 +163,7 @@ if page == "Local Files":
                             st.caption(f"Generated at: {summary_data.get('generated_at')} by {summary_data.get('model_used')}")
                         else:
                             st.write("No summary available yet.")
-                            
-                        # 2. Generate button
+                        
                         # 2. Generate button
                         if st.button(f"Generate Summary {file_data['name']}", key=f"gen_{file_data['path']}"):
                              st.write("Generating summary...")
