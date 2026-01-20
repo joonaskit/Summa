@@ -20,6 +20,11 @@ class LocalFileService:
         # Recursive search for relevant extensions
         extensions = ['*.md', '*.pdf', '*.docx', '*.pptx', '*.xlsx', '*.txt']
         
+        # Helper to check summaries efficiently
+        summaries_set = set()
+        if self.db_manager:
+            summaries_set = set(self.db_manager.get_files_with_summaries())
+
         # globe recursive needs python 3.10+ for 'root_dir/**/ext' or manual walk
         # Using os.walk for better compatibility and control
         for root, dirs, files in os.walk(self.root_dir):
@@ -37,7 +42,8 @@ class LocalFileService:
                         "path": rel_path,
                         "type": file_type,
                         "size": stat.st_size,
-                        "modified": last_modified_dt.strftime('%Y-%m-%d %H:%M:%S')
+                        "modified": last_modified_dt.strftime('%Y-%m-%d %H:%M:%S'),
+                        "has_summary": rel_path in summaries_set
                     }
                     files_data.append(file_info)
                     

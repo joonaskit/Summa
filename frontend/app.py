@@ -31,20 +31,44 @@ if page == "Local Files":
             except Exception as e:
                 st.error(f"Error fetching tags: {e}")
 
-            # --- Tag Filter ---
+            # --- Filters ---
+            st.write("### Filters")
+            
+            # Row 1: Tags
             selected_filter_tags = []
             if all_tags:
-                selected_filter_tags = st.pills("Filter by Tags", options=all_tags, selection_mode="multi")
+                selected_filter_tags = st.pills("Tags", options=all_tags, selection_mode="multi", key="filter_tags")
             
-            # Filter files based on selection
+            # Row 2: Type and Summary
+            c_f1, c_f2 = st.columns(2)
+            with c_f1:
+                all_types = sorted(list(set(f.get('type', 'unknown') for f in files))) if files else []
+                selected_types = st.pills("Document Type", options=all_types, selection_mode="multi", key="filter_types")
+            
+            with c_f2:
+                summary_filter = st.pills("Summary Status", options=["All", "With Summary", "No Summary"], default="All", selection_mode="single", key="filter_summary")
+            
+            # Apply Filters
+            filtered_files = files
+            
+            # 1. Tags
             if selected_filter_tags:
-                filtered_files = []
-                for f in files:
-                    file_tags = f.get('tags', [])
-                    # Check overlap (OR logic: if file has ANY of the selected tags)
-                    if any(t in selected_filter_tags for t in file_tags):
-                        filtered_files.append(f)
-                files = filtered_files
+                filtered_files = [
+                    f for f in filtered_files 
+                    if any(t in selected_filter_tags for t in f.get('tags', []))
+                ]
+            
+            # 2. Types
+            if selected_types:
+                filtered_files = [f for f in filtered_files if f.get('type') in selected_types]
+                
+            # 3. Summary
+            if summary_filter == "With Summary":
+                filtered_files = [f for f in filtered_files if f.get('has_summary')]
+            elif summary_filter == "No Summary":
+                filtered_files = [f for f in filtered_files if not f.get('has_summary')]
+            
+            files = filtered_files
             
             # --- Tag Management ---
             with st.expander("Manage Tags"):

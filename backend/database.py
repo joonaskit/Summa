@@ -144,6 +144,13 @@ class DatabaseManager:
             return dict(zip(columns, result))
         return None
 
+    def get_files_with_summaries(self) -> List[str]:
+        """Retrieve a list of file paths that have summaries."""
+        if not self.connection:
+            self.connect()
+        result = self.connection.execute("SELECT path FROM file_summaries").fetchall()
+        return [row[0] for row in result]
+
     def get_all_tags(self) -> List[str]:
         """Retrieve all available tags."""
         if not self.connection:
