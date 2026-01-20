@@ -32,21 +32,26 @@ if page == "Local Files":
                 st.error(f"Error fetching tags: {e}")
 
             # --- Filters ---
-            st.write("### Filters")
-            
-            # Row 1: Tags
-            selected_filter_tags = []
-            if all_tags:
-                selected_filter_tags = st.pills("Tags", options=all_tags, selection_mode="multi", key="filter_tags")
-            
-            # Row 2: Type and Summary
-            c_f1, c_f2 = st.columns(2)
-            with c_f1:
-                all_types = sorted(list(set(f.get('type', 'unknown') for f in files))) if files else []
-                selected_types = st.pills("Document Type", options=all_types, selection_mode="multi", key="filter_types")
-            
-            with c_f2:
-                summary_filter = st.pills("Summary Status", options=["All", "With Summary", "No Summary"], default="All", selection_mode="single", key="filter_summary")
+            with st.expander("Filters", expanded=True):
+                # Toggle Hidden Files
+                show_hidden = st.checkbox("Show hidden files", value=False)
+                if not show_hidden:
+                    files = [f for f in files if not f['name'].startswith('.')]
+                
+                # Row 1: Tags
+                selected_filter_tags = []
+                if all_tags:
+                    selected_filter_tags = st.pills("Tags", options=all_tags, selection_mode="multi", key="filter_tags")
+                
+                # Row 2: Type and Summary
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    # Recalculate types based on potentially hidden-filtered files
+                    all_types = sorted(list(set(f.get('type', 'unknown') for f in files))) if files else []
+                    selected_types = st.pills("Document Type", options=all_types, selection_mode="multi", key="filter_types")
+                
+                with c_f2:
+                    summary_filter = st.pills("Summary Status", options=["All", "With Summary", "No Summary"], default="All", selection_mode="single", key="filter_summary")
             
             # Apply Filters
             filtered_files = files
