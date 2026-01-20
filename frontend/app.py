@@ -19,42 +19,58 @@ if page == "Local Files":
         response = requests.get(f"{API_URL}/files")
         if response.status_code == 200:
             files = response.json()
-            files = response.json()
+            
+            # --- Fetch Tags for Filtering & Management ---
+            all_tags = []
+            try:
+                tags_resp = requests.get(f"{API_URL}/tags")
+                if tags_resp.status_code == 200:
+                    all_tags = tags_resp.json()
+                else:
+                    st.error("Could not fetch tags")
+            except Exception as e:
+                st.error(f"Error fetching tags: {e}")
+
+            # --- Tag Filter ---
+            selected_filter_tags = []
+            if all_tags:
+                selected_filter_tags = st.pills("Filter by Tags", options=all_tags, selection_mode="multi")
+            
+            # Filter files based on selection
+            if selected_filter_tags:
+                filtered_files = []
+                for f in files:
+                    file_tags = f.get('tags', [])
+                    # Check overlap (OR logic: if file has ANY of the selected tags)
+                    if any(t in selected_filter_tags for t in file_tags):
+                        filtered_files.append(f)
+                files = filtered_files
             
             # --- Tag Management ---
             with st.expander("Manage Tags"):
                 st.subheader("Available Tags")
-                try:
-                    tags_resp = requests.get(f"{API_URL}/tags")
-                    if tags_resp.status_code == 200:
-                        all_tags = tags_resp.json()
-                        
-                        # Create new tag
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            new_tag = st.text_input("New Tag Name")
-                        with c2:
-                            if st.button("Add Tag"):
-                                if new_tag:
-                                    requests.post(f"{API_URL}/tags", json={"name": new_tag})
-                                    st.rerun()
-                        
-                        # List and delete tags
-                        st.write("Existing Tags:")
-                        for t in all_tags:
-                            col_t1, col_t2 = st.columns([4, 1])
-                            with col_t1:
-                                st.code(t)
-                            with col_t2:
-                                if st.button("🗑️", key=f"del_tag_{t}"):
-                                    requests.delete(f"{API_URL}/tags/{t}")
-                                    st.rerun()
-                    else:
-                        st.error("Could not fetch tags")
-                        all_tags = []
-                except Exception as e:
-                    st.error(f"Error fetching tags: {e}")
-                    all_tags = []
+                # all_tags is already fetched above
+                
+                # Create new tag
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    new_tag = st.text_input("New Tag Name")
+                with c2:
+                    if st.button("Add Tag"):
+                        if new_tag:
+                            requests.post(f"{API_URL}/tags", json={"name": new_tag})
+                            st.rerun()
+                
+                # List and delete tags
+                st.write("Existing Tags:")
+                for t in all_tags:
+                    col_t1, col_t2 = st.columns([4, 1])
+                    with col_t1:
+                        st.code(t)
+                    with col_t2:
+                        if st.button("🗑️", key=f"del_tag_{t}"):
+                            requests.delete(f"{API_URL}/tags/{t}")
+                            st.rerun()
 
             # File Uploader
             with st.expander("Upload New File"):
