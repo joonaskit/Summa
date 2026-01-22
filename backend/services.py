@@ -290,8 +290,6 @@ class LLMService:
         self.base_url = base_url
         self.db_manager = db_manager
         self.local_file_service = local_file_service
-        # Initialize LangChain ChatOpenAI
-        # Note: API Key is required but ignored by local LLMs usually, but we set a dummy one.
         self.llm = ChatOpenAI(
             base_url=self.base_url,
             api_key="lm-studio",
