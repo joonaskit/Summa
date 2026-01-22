@@ -82,6 +82,20 @@ def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=result["error"])
     return result
 
+@app.delete("/files/delete")
+def delete_file_endpoint(path: str):
+    """Delete a file."""
+    result = local_service.delete_file(path)
+    if "error" in result:
+        # Check if 404 or 500
+        if result["error"] == "File not found":
+             raise HTTPException(status_code=404, detail=result["error"])
+        elif result["error"] == "Access denied":
+             raise HTTPException(status_code=403, detail=result["error"])
+        else:
+             raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
 @app.post("/hedgedoc")
 def fetch_hedgedoc(request: HedgeDocRequest):
     """Fetch content from a HedgeDoc URL."""

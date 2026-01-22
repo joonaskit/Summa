@@ -161,6 +161,28 @@ class LocalFileService:
         except Exception as e:
             return {"error": str(e)}
 
+    def delete_file(self, rel_path: str):
+        """Delete a file from disk and DB."""
+        full_path = os.path.join(self.root_dir, rel_path)
+        
+        # Security check: prevent directory traversal
+        if ".." in rel_path or not os.path.abspath(full_path).startswith(os.path.abspath(self.root_dir)):
+             return {"error": "Access denied"}
+        
+        try:
+            if os.path.exists(full_path):
+                os.remove(full_path)
+                
+                # Update DB
+                if self.db_manager:
+                    self.db_manager.delete_file(rel_path)
+                    
+                return {"success": True, "message": f"Deleted {rel_path}"}
+            else:
+                return {"error": "File not found"}
+        except Exception as e:
+            return {"error": f"Failed to delete file: {str(e)}"}
+
 class HedgeDocService:
     def fetch_content(self, url: str, cookie: str = None):
         # HedgeDoc usually exposes raw content at /download or if it's already a raw link

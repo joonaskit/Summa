@@ -197,3 +197,15 @@ class DatabaseManager:
             return result[0]
         return []
 
+    def delete_file(self, path: str):
+        """Delete file metadata and summaries."""
+        if not self.connection:
+            self.connect()
+        
+        # Delete from summaries
+        self.connection.execute("DELETE FROM file_summaries WHERE path = ?", (path,))
+        
+        # Delete from metadata
+        self.connection.execute("DELETE FROM files_metadata WHERE path = ?", (path,))
+
+
