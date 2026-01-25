@@ -5,8 +5,9 @@ import os
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Summa", layout="wide")
+st.logo("./frontend/img/Logo_main.png", size="large")
 
-st.title("📚 Summa")
+st.image("./frontend/img/Logo_main.png")
 
 st.markdown("""
 Welcome to **Summa**, your personal file and knowledge manager.
