@@ -58,7 +58,7 @@ def read_root():
 
 @app.get("/files")
 def get_local_files():
-    """List all schoolwork files found in the data directory."""
+    """List all files found in the data directory."""
     return local_service.list_files()
 
 @app.get("/files/content")
@@ -197,3 +197,12 @@ def suggest_tags(request: SummaryRequest):
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
+
+@app.get("/llm/models")
+def get_llm_models():
+    return llm_service.get_models()
+
+@app.get("/llm/embedding_models")
+def get_llm_embedding_models():
+    return llm_service.get_embedding_models()
+
