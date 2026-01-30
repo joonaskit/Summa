@@ -7,6 +7,14 @@ import pypdf
 from docx import Document 
 from pptx import Presentation
 
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.documents import Document
+from typing import Iterator, List
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from langchain_core.vectorstores import InMemoryVectorStore
+
 class LocalFileService:
     def __init__(self, root_dir: str, db_manager=None):
         self.root_dir = root_dir
@@ -281,10 +289,6 @@ class GitHubService:
         except Exception as e:
             return {"error": str(e)}
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from typing import Iterator, List
-
 class LLMService:
     def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", db_manager=None, local_file_service=None):
         self.base_url = base_url
@@ -293,9 +297,21 @@ class LLMService:
         self.llm = ChatOpenAI(
             base_url=self.base_url,
             api_key="lm-studio",
-            model="local-model", # Model name often doesn't matter for local endpoints
+            model="local-model", # Uses default model from LM Studio at this time. TODO: make configurable
             temperature=0.7
         )
+    
+    def get_models(self):
+        resp = requests.get(f"{self.base_url}/models")
+        if resp.status_code != 200:
+            raise Exception(f"Failed to get models: {resp.text}")
+        models = resp.json()['data']
+        return models
+    
+
+    def get_embedding_models(self):
+        models = self.get_models()
+        return [m for m in models if "embed" in m['id']]
 
     def generate_summary(self, content: str) -> str:
         """Generates a summary for the given text content."""
@@ -432,4 +448,53 @@ class LLMService:
 
         # 2. Generate Tags
         tags = self.generate_tags(content)
-        return {"tags": tags}
+        return {"tags": tags}       
+
+import backend.utils as utils
+
+class RagService:
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-nomic-embed-text-v1.5", debug: bool = True):
+        self.db_manager = None
+        self.base_url = base_url # TODO: Use environment variables
+        self.embed_llm = embed_llm # TODO: Use environment variables or keep as user choice?
+        self.embedder = OpenAIEmbeddings(
+            base_url=self.base_url,
+            api_key="lm-studio", # TODO: Use environment variables
+            model=self.embed_llm,
+            check_embedding_ctx_length=False
+        )
+        if debug:
+            self.vectorstore = InMemoryVectorStore(self.embedder) # TODO: ChromaDB
+
+    def ingest_files(self, paths: List[str]):
+
+        utils.test_api()
+        docs = []
+        for path in paths:
+            content = utils.get_file_content(path)
+            doc = Document(
+                page_content=content,
+                metadata={"source": path}
+                # TODO: Add chunk indexing for window retrieval
+            )
+            docs.append(doc)
+        chunks = self._split_documents(docs)
+        document_ids = self.vectorstore.add_documents(chunks)
+        return {"document_ids": document_ids}
+
+    
+    def _split_documents(self, documents: List[Document]):
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len,
+            is_separator_regex=False,
+            add_start_index=True
+        )
+        return splitter.split_documents(documents)
+    
+    def vector_search(self, query: str, k: int = 4):
+        return self.vectorstore.similarity_search(query, k=k)
+
+
+        
