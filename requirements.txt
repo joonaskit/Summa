@@ -12,3 +12,4 @@ pypdf
 duckdb
 langchain
 langchain-openai
+langchain-text-splitters
