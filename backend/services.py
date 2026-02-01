@@ -453,10 +453,12 @@ class LLMService:
     def llm_query_with_context(self, query: str, context_text: str):
         messages = [
             SystemMessage(content=(
-                "You are a helpful assistant. Use the following context to answer the user's question. "
-                "If the answer is not in the context, say you don't know."
-                f"\n\nContext:\n{context_text}"
-                "Do not use emojis or special characters. Keep the answer simple and concise. Give source with the answer."
+                "You are a helpful assistant specialized in answering questions based solely on the provided text.\n"
+                "1. Answer the user's question **strictly** using only the information inside the <context> tags below.\n"
+                "2. If the answer is not contained in the context, explicitly say you don't know. Do not make up an answer.\n"
+                "3. Cite the source for your answer using the '(Source: ...)' format provided in the text.\n"
+                "4. Do not use emojis. Keep the answer simple, concise, and professional.\n\n"
+                f"<context>\n{context_text}\n</context>"
             )),
             HumanMessage(content=query)
         ]
