@@ -39,7 +39,7 @@ def generate_answer(query: str, rag_service):
 
 if __name__ == "__main__":
 
-    service = RagService(debug=True, base_url="http://192.168.68.56:1234/v1")
+    service = RagService(debug=True, base_url="http://192.168.96.1:1234/v1")
     
     # dummy data
     with open("./data/test_knowledge.txt", "w") as f:
@@ -47,9 +47,5 @@ if __name__ == "__main__":
     
     service.ingest_files(["test_knowledge.txt"])
 
-
-    query = "What is the project code name?"
-    print(f"Answer: {generate_answer(query, service)}")
-
-    query = "What is the project due date?"
-    print(f"Answer: {generate_answer(query, service)}")
+    print(service.query_with_context("What is the project code name?"))
+    print(service.query_with_context("What is the project due date?"))
