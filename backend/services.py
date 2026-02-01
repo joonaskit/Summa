@@ -463,7 +463,10 @@ class LLMService:
             HumanMessage(content=query)
         ]
         response = self.llm.invoke(messages)
-        return response.content
+        return {
+            "status": "success",
+            "response": response.content.strip()
+        }
    
 
 import backend.utils as utils
@@ -484,21 +487,26 @@ class RagService:
             self.vectorstore = InMemoryVectorStore(self.embedder) # TODO: ChromaDB
 
     def ingest_files(self, paths: List[str]):
-
-        utils.test_api()
-        docs = []
-        for path in paths:
-            content = utils.get_file_content(path)
-            doc = Document(
-                page_content=content,
-                metadata={"source": path}
-                # TODO: Add chunk indexing for window retrieval
-            )
-            docs.append(doc)
-        chunks = self._split_documents(docs)
-        document_ids = self.vectorstore.add_documents(chunks)
-        return {"document_ids": document_ids}
-
+        try:
+            utils.test_api()
+            docs = []
+            for path in paths:
+                content = utils.get_file_content(path)
+                doc = Document(
+                    page_content=content,
+                    metadata={"source": path}
+                    # TODO: Add chunk indexing for window retrieval
+                )
+                docs.append(doc)
+            chunks = self._split_documents(docs)
+            document_ids = self.vectorstore.add_documents(chunks)
+            return {
+                "status": "success",
+                "document_ids": document_ids,
+                "message": f"Successfully ingested {len(paths)} files."
+            }
+        except Exception as e:
+            raise e
     
     def _split_documents(self, documents: List[Document]):
         splitter = RecursiveCharacterTextSplitter(
@@ -510,11 +518,11 @@ class RagService:
         )
         return splitter.split_documents(documents)
     
-    def vector_search(self, query: str, k: int = 4):
+    def _vector_search(self, query: str, k: int = 4):
         return self.vectorstore.similarity_search(query, k=k)
     
     def query_with_context(self, query: str, k: int = 4):
-        results = self.vector_search(query, k=k)
+        results = self._vector_search(query, k=k)
         for doc in results:
             doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
         context_text = "\n\n".join([doc.page_content for doc in results])

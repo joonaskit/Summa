@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from .services import LocalFileService, HedgeDocService, GitHubService, LLMService
+from .services import LocalFileService, HedgeDocService, GitHubService, LLMService, RagService
 from .database import DatabaseManager
 from pydantic import BaseModel
 from typing import List, Optional
@@ -40,6 +40,7 @@ local_service = LocalFileService(root_dir=DATA_DIR, db_manager=db_manager)
 hedgedoc_service = HedgeDocService()
 github_service = GitHubService()
 llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_file_service=local_service)
+rag_service = RagService(base_url=LLM_BASE_URL)
 
 class HedgeDocRequest(BaseModel):
     url: str
@@ -206,3 +207,32 @@ def get_llm_models():
 def get_llm_embedding_models():
     return llm_service.get_embedding_models()
 
+class QueryRequest(BaseModel):
+    query: str
+
+@app.post("/rag/query", status_code=status.HTTP_200_OK)
+def rag_query(request: QueryRequest):
+    try:
+        result = rag_service.query_with_context(request.query)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/rag/query_stream")
+def rag_query_stream(request: QueryRequest):
+    return rag_service.query_with_context_stream(query)
+
+class IngestRequest(BaseModel):
+    paths: List[str]
+
+@app.post("/rag/ingest", status_code=status.HTTP_201_CREATED)
+def rag_ingest(request: IngestRequest):
+    try:
+        result = rag_service.ingest_files(request.paths)    
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
