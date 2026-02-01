@@ -64,6 +64,13 @@ if __name__ == "__main__":
     # Initialize Service
     # Ensure base_url matches your local LLM setup
     service = RagService(debug=True, base_url="http://192.168.96.1:1234/v1")
+    bridge_doc = "Project Deep Dive is built strictly on the Apollo-v2 architecture."
+    with open("./data/project_specs.txt", "w") as f: 
+        f.write(bridge_doc)
+
+    # 2. Ingest ALL necessary files (ensure previous ones are still there)
+    # We need: Meeting Notes (mentions Deep Dive) + Bridge (links to Apollo) + Tech Doc (has Python version)
+    service.ingest_files(["meeting_notes.txt", "project_specs.txt", "tech_deployment.md"])
     
     # Ingest the new files
     print("...Ingesting files...")
@@ -100,3 +107,11 @@ if __name__ == "__main__":
             print(f"💡 A: {answer}\n" + "-"*40)
         except Exception as e:
             print(f"❌ Error: {e}\n" + "-"*40)
+
+    # 3. The Multi-Hop Query
+    # The user asks about the project, but the answer is in the tech guide.
+    query = "What is the required Python version for the architecture used in Project Deep Dive?"
+
+    print(f"❓ Q: {query}")
+    answer = service.query_with_context(query)
+    print(f"💡 A: {answer}")
