@@ -448,12 +448,26 @@ class LLMService:
 
         # 2. Generate Tags
         tags = self.generate_tags(content)
-        return {"tags": tags}       
+        return {"tags": tags}
+
+    def llm_query_with_context(self, query: str, context_text: str):
+        messages = [
+            SystemMessage(content=(
+                "You are a helpful assistant. Use the following context to answer the user's question. "
+                "If the answer is not in the context, say you don't know."
+                f"\n\nContext:\n{context_text}"
+                "Do not use emojis or special characters. Keep the answer simple and concise. Give source with the answer."
+            )),
+            HumanMessage(content=query)
+        ]
+        response = self.llm.invoke(messages)
+        return response.content
+   
 
 import backend.utils as utils
 
 class RagService:
-    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-nomic-embed-text-v1.5", debug: bool = True):
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True):
         self.db_manager = None
         self.base_url = base_url # TODO: Use environment variables
         self.embed_llm = embed_llm # TODO: Use environment variables or keep as user choice?
@@ -463,6 +477,7 @@ class RagService:
             model=self.embed_llm,
             check_embedding_ctx_length=False
         )
+        self.llm = LLMService(base_url=self.base_url)
         if debug:
             self.vectorstore = InMemoryVectorStore(self.embedder) # TODO: ChromaDB
 
@@ -495,6 +510,14 @@ class RagService:
     
     def vector_search(self, query: str, k: int = 4):
         return self.vectorstore.similarity_search(query, k=k)
+    
+    def query_with_context(self, query: str, k: int = 4):
+        results = self.vector_search(query, k=k)
+        for doc in results:
+            doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
+        context_text = "\n\n".join([doc.page_content for doc in results])
+        return self.llm.llm_query_with_context(query, context_text)
+
 
 
         
