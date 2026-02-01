@@ -12,4 +12,4 @@ if __name__ == "__main__":
 
     print(rag_service.ingest_files(documents[:4]))
 
-    print(rag_service.vector_search("REST", 3))
+    print(rag_service._vector_search("REST", 3))
