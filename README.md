@@ -40,3 +40,13 @@ A lightweight document gatherer and summarizer. **Summa** helps you consolidate 
 - **Backend**: FastAPI
 - **Database**: DuckDB
 - **LLM Integration**: LangChain + LangChain-OpenAI
+
+
+## Logs
+
+### Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+export LOG_LEVEL=INFO
+### Set log format (console or json)
+export LOG_FORMAT=console
+### Optional: Set log file path
+export LOG_FILE=/var/log/summa/backend.log
