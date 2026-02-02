@@ -10,6 +10,7 @@ from pptx import Presentation
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.documents import Document
+from langchain_chroma import Chroma
 from typing import Iterator, List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -554,7 +555,7 @@ class LLMService:
 import backend.utils as utils
 
 class RagService:
-    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True):
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False):
         logger.info(f"Initializing RagService with base_url: {base_url}, embed_llm: {embed_llm}")
         self.db_manager = None
         self.base_url = base_url # TODO: Use environment variables
@@ -566,8 +567,17 @@ class RagService:
             check_embedding_ctx_length=False
         )
         self.llm = LLMService(base_url=self.base_url)
-        if debug:
-            self.vectorstore = InMemoryVectorStore(self.embedder) # TODO: ChromaDB
+        if inmemory:
+            self.vectorstore = InMemoryVectorStore(self.embedder)
+            logger.info("Using in-memory vector store")
+        else:
+            chroma_base_dir = os.getenv("CHROMA_DIR", "/app/data/chroma")
+            self.vectorstore = Chroma(
+                persist_directory=chroma_base_dir, 
+                embedding_function=self.embedder,
+                collection_name="summa_collection"
+            )
+            logger.info("Using ChromaDB vector store")
         logger.info("RagService initialized successfully")
 
     def ingest_files(self, paths: List[str]):
