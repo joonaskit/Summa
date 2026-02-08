@@ -6,6 +6,7 @@ from datetime import datetime
 import pypdf 
 from docx import Document 
 from pptx import Presentation
+from fastapi import UploadFile
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -83,6 +84,66 @@ class LocalFileService:
         ext = os.path.splitext(filename)[1]
         return any(pat.endswith(ext) for pat in extensions)
 
+    def read_pdf(self, file_path):
+        """Read content from a PDF file.
+        
+        Args:
+            file_path: Can be a string path or a file-like object
+        
+        Returns:
+            str: Extracted text content from the PDF
+        """
+        try:
+            text = ""
+            reader = pypdf.PdfReader(file_path)
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            logger.debug(f"Successfully read PDF, {len(reader.pages)} pages")
+            return text
+        except Exception as e:
+            logger.error(f"Failed to read PDF: {str(e)}")
+            raise Exception(f"Failed to read PDF: {e}")
+
+    def read_docx(self, file_path):
+        """Read content from a DOCX file.
+        
+        Args:
+            file_path: Can be a string path or a file-like object
+        
+        Returns:
+            str: Extracted text content from the DOCX
+        """
+        try:
+            doc = Document(file_path)
+            text = "\n".join([para.text for para in doc.paragraphs])
+            logger.debug(f"Successfully read DOCX, {len(doc.paragraphs)} paragraphs")
+            return text
+        except Exception as e:
+            logger.error(f"Failed to read DOCX: {str(e)}")
+            raise Exception(f"Failed to read DOCX: {e}")
+
+    def read_pptx(self, file_path):
+        """Read content from a PPTX file.
+        
+        Args:
+            file_path: Can be a string path or a file-like object
+        
+        Returns:
+            str: Extracted text content from the PPTX
+        """
+        try:
+            prs = Presentation(file_path)
+            text = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        text.append(shape.text)
+            logger.debug(f"Successfully read PPTX, {len(prs.slides)} slides")
+            return "\n".join(text)
+        except Exception as e:
+            logger.error(f"Failed to read PPTX: {str(e)}")
+            raise Exception(f"Failed to read PPTX: {e}")
+
     def get_content(self, rel_path):
         logger.debug(f"Getting content for file: {rel_path}")
         full_path = os.path.join(self.root_dir, rel_path)
@@ -104,45 +165,56 @@ class LocalFileService:
                 raise Exception(f"Failed to read text file: {e}")
         
         elif ext == '.pdf':
-            try:
-                text = ""
-                reader = pypdf.PdfReader(full_path)
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
-                logger.debug(f"Successfully read PDF: {rel_path}, {len(reader.pages)} pages")
-                return {"content": text, "type": "text"}
-            except Exception as e:
-                logger.error(f"Failed to read PDF {rel_path}: {str(e)}")
-                raise Exception(f"Failed to read PDF: {e}")
+            text = self.read_pdf(full_path)
+            return {"content": text, "type": "text"}
 
         elif ext == '.docx':
-            try:
-                doc = Document(full_path)
-                text = "\n".join([para.text for para in doc.paragraphs])
-                logger.debug(f"Successfully read DOCX: {rel_path}, {len(doc.paragraphs)} paragraphs")
-                return {"content": text, "type": "text"}
-            except Exception as e:
-                logger.error(f"Failed to read DOCX {rel_path}: {str(e)}")
-                raise Exception(f"Failed to read DOCX: {e}")
+            text = self.read_docx(full_path)
+            return {"content": text, "type": "text"}
 
         elif ext == '.pptx':
-            try:
-                prs = Presentation(full_path)
-                text = []
-                for slide in prs.slides:
-                    for shape in slide.shapes:
-                        if hasattr(shape, "text"):
-                            text.append(shape.text)
-                logger.debug(f"Successfully read PPTX: {rel_path}, {len(prs.slides)} slides")
-                return {"content": "\n".join(text), "type": "text"}
-            except Exception as e:
-                logger.error(f"Failed to read PPTX {rel_path}: {str(e)}")
-                raise Exception(f"Failed to read PPTX: {e}")
+            text = self.read_pptx(full_path)
+            return {"content": text, "type": "text"}
                 
         else:
             # For binary files not yet supported (e.g. xlsx), return message
             logger.debug(f"Binary file not displayable: {rel_path}")
             raise Exception("Binary file content not displayable in text view yet.")
+    
+    def get_uploaded_file_content(self, file: UploadFile):
+        """Get content from an uploaded file object.
+        
+        Args:
+            file: File-like object with filename and read() method
+        
+        Returns:
+            dict: Dictionary with 'content' and 'type' keys
+        """
+        logger.info(f"Getting content from uploaded file: {file.filename}")
+        ext = os.path.splitext(file.filename)[1].lower()
+        logger.debug(f"File extension: {ext}")
+        
+        try:
+            if ext in ['.md', '.txt']:
+                content = file.file.read()
+                if isinstance(content, bytes):
+                    content = content.decode('utf-8', errors='ignore')
+                return {"content": content, "type": "text"}
+            elif ext == '.pdf':
+                content = self.read_pdf(file.file)
+                return {"content": content, "type": "text"}
+            elif ext == '.docx':
+                content = self.read_docx(file.file)
+                return {"content": content, "type": "text"}
+            elif ext == '.pptx':
+                content = self.read_pptx(file.file)
+                return {"content": content, "type": "text"}
+            else:
+                logger.debug(f"Binary file not displayable: {file.filename}")
+                raise Exception("Binary file content not displayable in text view yet.")
+        except Exception as e:
+            logger.error(f"Error getting content from uploaded file: {str(e)}", exc_info=True)
+            raise e
 
     def save_content(self, filename: str, content: str):
         # Basic sanitization could be done here
@@ -555,9 +627,13 @@ class LLMService:
 import backend.utils as utils
 
 class RagService:
-    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False):
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False, root_dir: str = None):
         logger.info(f"Initializing RagService with base_url: {base_url}, embed_llm: {embed_llm}")
         self.db_manager = None
+        # Use provided root_dir or fall back to environment variable or default
+        if root_dir is None:
+            root_dir = os.getenv("DATA_DIR", "./data")
+        self.local_file_service = LocalFileService(root_dir=root_dir)
         self.base_url = base_url # TODO: Use environment variables
         self.embed_llm = embed_llm # TODO: Use environment variables or keep as user choice?
         self.embedder = OpenAIEmbeddings(
@@ -605,6 +681,34 @@ class RagService:
             }
         except Exception as e:
             logger.error(f"Error ingesting files: {str(e)}", exc_info=True)
+            raise e
+    
+    def ingest_uploaded_file(self, file: UploadFile):
+        logger.info(f"Ingesting uploaded file: {file.filename}")
+        try:
+            content = self.local_file_service.get_uploaded_file_content(file)
+            logger.debug(f"Content: {content}")
+            logger.debug(f"Content: {content['content']}")
+            logger.debug(f"Metadata: {file.filename}")
+            logger.debug(f"Type of content: {type(content)}")
+            logger.debug(f"Type of metadata: {type(file.filename)}")
+            doc = Document(
+                page_content=content['content'],
+                metadata={"source": file.filename}
+            )
+            chunks = self._split_documents([doc])
+            logger.debug(f"Split document into {len(chunks)} chunks")
+            document_ids = self.vectorstore.add_documents(chunks)
+            logger.info(f"Successfully ingested uploaded file, {len(chunks)} chunks, {len(document_ids)} document IDs")
+            return {
+                "status": "success",
+                "document_ids": document_ids,
+                "message": f"Successfully ingested uploaded file.",
+                "content": content['content'],
+                "filename": file.filename
+            }
+        except Exception as e:
+            logger.error(f"Error ingesting uploaded file: {str(e)}", exc_info=True)
             raise e
     
     def _split_documents(self, documents: List[Document]):
