@@ -84,7 +84,8 @@ local_service = LocalFileService(root_dir=DATA_DIR, db_manager=db_manager)
 hedgedoc_service = HedgeDocService()
 github_service = GitHubService()
 llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_file_service=local_service)
-rag_service = RagService(base_url=LLM_BASE_URL)
+RAG_SERVICE = RagService(base_url=LLM_BASE_URL)
+RAG_SERVICE_IM = RagService(base_url=LLM_BASE_URL, inmemory=True)
 
 class HedgeDocRequest(BaseModel):
     url: str
@@ -300,14 +301,25 @@ def get_llm_embedding_models():
     logger.debug("Fetching available embedding models")
     return llm_service.get_embedding_models()
 
+@app.get("/llm/summary")
+async def get_summary(content:str, filename:str):
+    logger.info(f"Generating summary for file: {filename}")
+    return StreamingResponse(llm_service.generate_summary_stream(content=content), media_type="text/plain")
+
 class QueryRequest(BaseModel):
     query: str
+    inmemory: Optional[bool] = False
 
 @app.post("/rag/query", status_code=status.HTTP_200_OK)
 def rag_query(request: QueryRequest):
     logger.info(f"RAG query: {request.query[:100]}...")  # Log first 100 chars
     try:
-        result = rag_service.query_with_context(request.query)
+        if request.inmemory:
+            logger.info("RAG query (inmemory)")
+            result = RAG_SERVICE_IM.query_with_context(request.query)
+        else:
+            logger.info("RAG query (db)")
+            result = RAG_SERVICE.query_with_context(request.query)
         logger.info("RAG query completed successfully")
         return result
     except Exception as e:
@@ -317,17 +329,37 @@ def rag_query(request: QueryRequest):
 @app.post("/rag/query_stream")
 def rag_query_stream(request: QueryRequest):
     logger.info(f"RAG streaming query: {request.query[:100]}...")  # Log first 100 chars
-    return rag_service.query_with_context_stream(request.query)
+    return RAG_SERVICE.query_with_context_stream(request.query)
 
 class IngestRequest(BaseModel):
     paths: List[str]
+    inmemory: Optional[bool] = False
 
 @app.post("/rag/ingest", status_code=status.HTTP_201_CREATED)
 def rag_ingest(request: IngestRequest):
     logger.info(f"Ingesting {len(request.paths)} files into RAG system")
     try:
+        rag_service = RAG_SERVICE_IM if request.inmemory else RAG_SERVICE
         result = rag_service.ingest_files(request.paths)
         logger.info(f"Successfully ingested {len(request.paths)} files")
+        return result
+    except FileNotFoundError as e:
+        logger.error(f"File not found during RAG ingestion: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        logger.error(f"Invalid value during RAG ingestion: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"RAG ingestion failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/rag/ingest_uploaded_file", status_code=status.HTTP_201_CREATED)
+async def rag_ingest_uploaded_file(file: UploadFile = File(...), inmemory: Optional[bool] = True):
+    logger.info(f"Ingesting uploaded file into RAG system")
+    try:
+        rag_service = RAG_SERVICE_IM if inmemory else RAG_SERVICE
+        result = rag_service.ingest_uploaded_file(file)
+        logger.info(f"Successfully ingested uploaded file")
         return result
     except FileNotFoundError as e:
         logger.error(f"File not found during RAG ingestion: {str(e)}")
