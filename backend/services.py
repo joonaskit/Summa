@@ -4,7 +4,7 @@ import requests
 import mimetypes
 from datetime import datetime
 import pypdf 
-from docx import Document 
+import docx
 from pptx import Presentation
 from fastapi import UploadFile
 
@@ -114,7 +114,7 @@ class LocalFileService:
             str: Extracted text content from the DOCX
         """
         try:
-            doc = Document(file_path)
+            doc = docx.Document(file_path)
             text = "\n".join([para.text for para in doc.paragraphs])
             logger.debug(f"Successfully read DOCX, {len(doc.paragraphs)} paragraphs")
             return text
