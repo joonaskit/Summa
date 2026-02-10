@@ -4,11 +4,34 @@ A lightweight document gatherer and summarizer. **Summa** helps you consolidate 
 
 ## ✨ Features
 
-- **📂 Local File Vault**: Manage and view `.md`, `.pdf`, `.docx`, and `.pptx` files.
-- **📝 HedgeDoc Integration**: Fetch and save notes directly from any HedgeDoc instance.
-- **🐙 GitHub Stats**: Track recent activity and contributions for any GitHub user.
-- **🤖 Local AI Summaries**: Generate streamed summaries for your documents using a local LLM (OpenAI-compatible API like LM Studio).
-- **🗄️ Metadata Storage**: DuckDB-powered persistence for file metadata and generated summaries.
+### 📂 Library
+- Manage and view local `.md`, `.txt`, `.pdf`, `.docx`, and `.pptx` files
+- Upload files individually or in bulk
+- Generate AI-powered summaries for documents using a local LLM
+- Organize files with custom tags
+- AI-powered tag suggestions based on file content
+- Filter files by tags, document type, and summary status
+- View file content directly in the browser
+
+### 📝 HedgeDoc Integration
+- Connect to any HedgeDoc instance using session cookies
+- View your note history
+- Fetch and preview note content
+- Download individual notes or bulk download multiple notes to your library
+- Quick fetch by URL for public or private notes
+
+### 🔮 Nexus (RAG Chat)
+- **Chat with a database**: Ingest multiple documents into a vector database and ask questions across all of them
+- **Chat with a file**: Upload a file and have a conversation about its content without persisting to the database
+- File summarization on demand
+- Powered by local LLM with OpenAI-compatible API (e.g., LM Studio)
+- Conversation history management
+
+### 🗄️ Infrastructure
+- **DuckDB**: Persistent storage for file metadata, tags, and generated summaries
+- **ChromaDB**: Vector database for storing document embeddings used in RAG
+- **LangChain**: RAG implementation with vector embeddings
+- **Streaming responses**: Real-time AI responses for better UX
 
 ## 🚀 Getting Started
 
