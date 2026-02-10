@@ -9,13 +9,39 @@ from utils import API_URL
 
 st.session_state["upload_status"] = 404
 
+@st.cache_data
+def get_models():
+    try:
+        response = requests.get(f"{API_URL}/llm/models")
+        if response.status_code == 200:
+            return [model['id'] for model in response.json()]
+        else:
+            st.error("Could not fetch models")
+            return []
+    except Exception as e:
+        st.error(f"Error fetching models: {str(e)}")
+        return []
+
+def get_base_url():
+    return os.getenv("LLM_URL", "http://host.docker.internal:1234/v1")
+
 with st.expander("Settings", expanded=False):
-    base_url = st.text_input("Nexus Base URL", value="https://demo.hedgedoc.org")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        base_url = st.text_input("Nexus Base URL", value=get_base_url())
+    with c2:
+        models = get_models()
+        st.session_state["model"] = st.selectbox("Model", options=models)
+    with c3:
+        if st.button("Clear all chat history"):
+            st.session_state["chat_messages"] = []
+            st.session_state["conv_log"] = []
+            st.rerun()
 
 tab1, tab2, tab3 = st.tabs(["Ingest", "Chat with a database", "Chat with a file"])
 
 with tab1:
-    with st.expander("Ignest files", expanded=True):
+    with st.expander("Ingest files", expanded=True):
         files = requests.get(f"{API_URL}/files")
         if files.status_code == 200:
             files = [node['path'] for node in files.json()]
