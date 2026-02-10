@@ -14,9 +14,9 @@ Welcome to **Summa**, your personal file and knowledge manager.
 
 Use the sidebar on the left to navigate between different modules:
 
-- **📂 Local Files**: Manage your local documents, generate AI summaries, and organize with tags.
-- **📝 HedgeDoc**: Connect to your HedgeDoc instance to manage and download notes.
-- **🐙 GitHub Stats**: Check GitHub contribution statistics.
+- **📂 Library**: Manage your local documents, generate AI summaries, organize with tags, and suggest tags using AI.
+- **📝 HedgeDoc**: Connect to your HedgeDoc instance to view, fetch, and download notes to your library.
+- **🔮 Nexus**: Chat with your documents using RAG (Retrieval Augmented Generation) - ingest files into a vector database and ask questions about them, or chat directly with individual files.
 
 ### Status
 """)
