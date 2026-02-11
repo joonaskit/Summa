@@ -14,6 +14,7 @@ services:
       - API_URL=http://backend:8000
       - LLM_URL=http://host.docker.internal:1234/v1
       - CHROMA_DIR=/app/data/chroma
+      - WHISPER_MODEL=base
       # Logging configuration
       - LOG_LEVEL=INFO
       - LOG_FORMAT=console
