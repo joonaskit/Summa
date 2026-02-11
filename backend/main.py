@@ -390,3 +390,49 @@ def get_video_info(request: VideoInfoRequest):
     except Exception as e:
         logger.error(f"Failed to fetch video info for {request.url}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video/transcribe")
+def transcribe_video(request: VideoInfoRequest):
+    """Download audio from YouTube video and transcribe it."""
+    logger.info(f"Transcribing video from URL: {request.url}")
+    audio_path = None
+    
+    try:
+        # Download audio
+        logger.info("Downloading audio...")
+        audio_path = video_service.download_audio(request.url)
+        
+        # Transcribe audio
+        logger.info("Transcribing audio...")
+        transcript = video_service.transcribe_audio(audio_path)
+        
+        # Clean up temporary file
+        video_service._cleanup_audio_file(audio_path)
+        
+        logger.info(f"Successfully transcribed video from: {request.url}")
+        return {
+            "url": request.url,
+            "transcript": transcript
+        }
+        
+    except ValueError as e:
+        # Clean up if file was downloaded
+        if audio_path:
+            video_service._cleanup_audio_file(audio_path)
+        logger.warning(f"Invalid video URL or unavailable video: {request.url} - {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    except FileNotFoundError as e:
+        # Clean up if file was downloaded
+        if audio_path:
+            video_service._cleanup_audio_file(audio_path)
+        logger.error(f"Audio file not found during transcription: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    except Exception as e:
+        # Clean up if file was downloaded
+        if audio_path:
+            video_service._cleanup_audio_file(audio_path)
+        logger.error(f"Failed to transcribe video from {request.url}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
