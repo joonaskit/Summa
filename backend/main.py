@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .services import LocalFileService, HedgeDocService, GitHubService, LLMService, RagService
+from .video_service import VideoService
 from .database import DatabaseManager
 from .logging_config import get_logger
 from pydantic import BaseModel
@@ -86,6 +87,7 @@ github_service = GitHubService()
 llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_file_service=local_service)
 RAG_SERVICE = RagService(base_url=LLM_BASE_URL)
 RAG_SERVICE_IM = RagService(base_url=LLM_BASE_URL, inmemory=True)
+video_service = VideoService()
 
 class HedgeDocRequest(BaseModel):
     url: str
@@ -97,6 +99,9 @@ class SummaryRequest(BaseModel):
 class HedgeDocHistoryRequest(BaseModel):
     base_url: str
     cookie: str
+
+class VideoInfoRequest(BaseModel):
+    url: str
 
 @app.get("/")
 def read_root():
@@ -369,4 +374,19 @@ async def rag_ingest_uploaded_file(file: UploadFile = File(...), inmemory: Optio
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"RAG ingestion failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video/info")
+def get_video_info(request: VideoInfoRequest):
+    """Fetch metadata for a YouTube video."""
+    logger.info(f"Fetching video info for URL: {request.url}")
+    try:
+        metadata = video_service.get_video_info(request.url)
+        logger.info(f"Successfully fetched video info for: {request.url}")
+        return metadata
+    except ValueError as e:
+        logger.warning(f"Invalid video URL: {request.url} - {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to fetch video info for {request.url}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
