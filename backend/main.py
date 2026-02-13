@@ -311,6 +311,11 @@ async def get_summary(content:str, filename:str):
     logger.info(f"Generating summary for file: {filename}")
     return StreamingResponse(llm_service.generate_summary_stream(content=content), media_type="text/plain")
 
+@app.get("/llm/video_summary")
+async def get_video_summary(content:str, filename:str):
+    logger.info(f"Generating summary for video: {filename}")
+    return StreamingResponse(llm_service.generate_video_summary_stream(content=content), media_type="text/plain")
+
 class QueryRequest(BaseModel):
     query: str
     inmemory: Optional[bool] = False

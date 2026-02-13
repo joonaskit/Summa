@@ -503,6 +503,18 @@ class LLMService:
         except Exception as e:
             yield f"Error generating summary: {str(e)}"
 
+    def generate_video_summary_stream(self, content: str) -> Iterator[str]:
+        """Generates a summary stream for the given text content."""
+        try:
+            messages = [
+                SystemMessage(content="You are a helpful assistant that summarizes video transcripts efficiently."),
+                HumanMessage(content=f"Please provide a concise summary of the following video transcript:\n\n{content[:8000]}")
+            ]
+            for chunk in self.llm.stream(messages):
+                yield chunk.content
+        except Exception as e:
+            yield f"Error generating summary: {str(e)}"
+
     def process_file_stream(self, path: str):
         """Reads file, streams summary generation, and stores in DB."""
         logger.info(f"Processing file stream for: {path}")
