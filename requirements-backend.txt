@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-multipart
+beautifulsoup4
+PyGithub
+python-docx
+openpyxl
+python-pptx
+pypdf
+duckdb
+langchain
+langchain-openai
+langchain-text-splitters
+langchain-chroma
+yt-dlp
+faster-whisper
