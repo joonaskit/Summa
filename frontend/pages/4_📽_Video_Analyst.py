@@ -51,7 +51,8 @@ with t1:
                 with st.expander("Transcript", expanded=False):
                     st.write(st.session_state.transcript)
             else:
-                if st.button("Transcribe"):
+                st.caption("Transcriptions will be cached in the database for faster access")
+                if st.button("Transcribe and cache"):
                     with st.status("Transcribing...") as status:
                         try:
                             result = get_video_transcription(url, data["title"])
@@ -69,7 +70,7 @@ with t1:
                 else: 
                     if st.button("Summarize"):
                         with st.status("Summarizing...") as summary_status:
-                            response = requests.get(f"{API_URL}/llm/video_summary", params={"content": st.session_state.transcript, "filename": st.session_state.video_info["title"]})
+                            response = requests.get(f"{API_URL}/llm/video_summary", params={"content": str(st.session_state.transcript), "filename": st.session_state.video_info["title"]})
                             if response.status_code == 200:
                                 st.session_state.summary = response.text
                                 st.write(st.session_state.summary)
