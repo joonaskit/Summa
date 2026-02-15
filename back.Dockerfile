@@ -5,8 +5,8 @@ WORKDIR /app
 # Install ffmpeg for audio extraction
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN uv pip install --system --no-cache-dir -r requirements.txt
+COPY requirements-backend.txt .
+RUN uv pip install --system --no-cache-dir -r requirements-backend.txt
 
 COPY backend/ ./backend/
 
