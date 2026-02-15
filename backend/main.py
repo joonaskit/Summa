@@ -87,7 +87,7 @@ github_service = GitHubService()
 llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_file_service=local_service)
 RAG_SERVICE = RagService(base_url=LLM_BASE_URL)
 RAG_SERVICE_IM = RagService(base_url=LLM_BASE_URL, inmemory=True)
-video_service = VideoService()
+video_service = VideoService(db_manager=db_manager)
 
 class HedgeDocRequest(BaseModel):
     url: str
@@ -382,7 +382,7 @@ async def rag_ingest_uploaded_file(file: UploadFile = File(...), inmemory: Optio
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/video/info")
-def get_video_info(request: VideoInfoRequest):
+async def get_video_info(request: VideoInfoRequest):
     """Fetch metadata for a YouTube video."""
     logger.info(f"Fetching video info for URL: {request.url}")
     try:
@@ -396,48 +396,54 @@ def get_video_info(request: VideoInfoRequest):
         logger.error(f"Failed to fetch video info for {request.url}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/video/list")
+def list_videos():
+    """Get list of all transcribed videos from database."""
+    logger.info("Fetching list of all videos")
+    try:
+        videos = db_manager.get_all_videos()
+        logger.info(f"Successfully retrieved {len(videos)} videos")
+        return {"videos": videos, "count": len(videos)}
+    except Exception as e:
+        logger.error(f"Failed to retrieve video list: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/video/transcribe")
 def transcribe_video(request: VideoInfoRequest):
-    """Download audio from YouTube video and transcribe it."""
+    """Download audio from YouTube video and transcribe it (with caching)."""
     logger.info(f"Transcribing video from URL: {request.url}")
-    audio_path = None
     
     try:
-        # Download audio
-        logger.info("Downloading audio...")
-        audio_path = video_service.download_audio(request.url)
-        
-        # Transcribe audio
-        logger.info("Transcribing audio...")
-        transcript = video_service.transcribe_audio(audio_path)
-        
-        # Clean up temporary file
-        video_service._cleanup_audio_file(audio_path)
-        
-        logger.info(f"Successfully transcribed video from: {request.url}")
-        return {
-            "url": request.url,
-            "transcript": transcript
-        }
+        result = video_service.transcribe_video_with_cache(request.url)
+        logger.info(f"Successfully transcribed video from: {request.url}, from_cache: {result['from_cache']}")
+        return result
         
     except ValueError as e:
-        # Clean up if file was downloaded
-        if audio_path:
-            video_service._cleanup_audio_file(audio_path)
         logger.warning(f"Invalid video URL or unavailable video: {request.url} - {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
         
-    except FileNotFoundError as e:
-        # Clean up if file was downloaded
-        if audio_path:
-            video_service._cleanup_audio_file(audio_path)
-        logger.error(f"Audio file not found during transcription: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
     except Exception as e:
-        # Clean up if file was downloaded
-        if audio_path:
-            video_service._cleanup_audio_file(audio_path)
         logger.error(f"Failed to transcribe video from {request.url}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/video/delete")
+def delete_video(request: VideoInfoRequest):
+    """Delete a cached video transcript by YouTube URL."""
+    logger.info(f"Deleting cached video: {request.url}")
+    
+    try:
+        deleted = db_manager.delete_video_by_url(request.url)
+        
+        if deleted:
+            logger.info(f"Successfully deleted video: {request.url}")
+            return {"success": True, "message": "Video deleted successfully"}
+        else:
+            logger.warning(f"Video not found in cache: {request.url}")
+            raise HTTPException(status_code=404, detail="Video not found in cache")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete video {request.url}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
