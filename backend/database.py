@@ -99,6 +99,18 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Migration error (FK removal): {e}")
         
+        # Create table for video transcripts
+        logger.debug("Creating videos table")
+        self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS videos (
+                id VARCHAR PRIMARY KEY,
+                youtube_url VARCHAR NOT NULL,
+                title VARCHAR,
+                transcript_text TEXT,
+                created_at TIMESTAMP
+            )
+        """)
+        
         logger.info("Database schema initialized successfully")
         
     def upsert_file_metadata(self, path: str, filename: str, last_modified: Any, size: int, file_type: str):
@@ -244,4 +256,134 @@ class DatabaseManager:
         self.connection.execute("DELETE FROM files_metadata WHERE path = ?", (path,))
         logger.info(f"File deleted from database: {path}")
 
+    def save_video(self, video_id: str, youtube_url: str, title: str, transcript: str):
+        """Save video metadata and transcript to database."""
+        logger.info(f"Saving video to database: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        import datetime
+        now = datetime.datetime.now()
+        
+        self.connection.execute("""
+            INSERT INTO videos (id, youtube_url, title, transcript_text, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                youtube_url = EXCLUDED.youtube_url,
+                title = EXCLUDED.title,
+                transcript_text = EXCLUDED.transcript_text
+        """, (video_id, youtube_url, title, transcript, now))
+        logger.info(f"Video saved successfully: {video_id}")
+
+    def get_video_by_url(self, youtube_url: str) -> Optional[Dict]:
+        """Retrieve video data by YouTube URL.
+        
+        Note: This method extracts the video ID from the URL and searches by ID,
+        so different URL formats for the same video will return the same result.
+        """
+        logger.debug(f"Retrieving video by URL: {youtube_url}")
+        if not self.connection:
+            self.connect()
+        
+        # Extract video ID from URL using regex patterns
+        import re
+        video_id = None
+        patterns = [
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/v/([a-zA-Z0-9_-]{11})',
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, youtube_url.strip())
+            if match:
+                video_id = match.group(1)
+                break
+        
+        if not video_id:
+            logger.warning(f"Could not extract video ID from URL: {youtube_url}")
+            return None
+        
+        logger.debug(f"Extracted video ID: {video_id}")
+        result = self.connection.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        
+        if result:
+            columns = [desc[0] for desc in self.connection.description]
+            video_data = dict(zip(columns, result))
+            logger.debug(f"Video found in database: {video_id}")
+            return video_data
+        
+        logger.debug(f"Video not found in database: {video_id}")
+        return None
+
+    def get_all_videos(self) -> List[Dict]:
+        """Retrieve all videos from the database.
+        
+        Returns:
+            List[Dict]: List of all video records with all columns
+        """
+        logger.debug("Retrieving all videos from database")
+        if not self.connection:
+            self.connect()
+        
+        results = self.connection.execute(
+            "SELECT id, youtube_url, title, transcript_text, created_at FROM videos ORDER BY created_at DESC"
+        ).fetchall()
+        
+        if results:
+            columns = [desc[0] for desc in self.connection.description]
+            videos = [dict(zip(columns, row)) for row in results]
+            logger.debug(f"Found {len(videos)} videos in database")
+            return videos
+        
+        logger.debug("No videos found in database")
+        return []
+
+    def delete_video_by_url(self, youtube_url: str) -> bool:
+        """Delete a video from the database by YouTube URL.
+        
+        Args:
+            youtube_url: YouTube video URL
+            
+        Returns:
+            bool: True if video was deleted, False if not found
+        """
+        logger.info(f"Deleting video by URL: {youtube_url}")
+        if not self.connection:
+            self.connect()
+        
+        # Extract video ID from URL using regex patterns
+        import re
+        video_id = None
+        patterns = [
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/v/([a-zA-Z0-9_-]{11})',
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, youtube_url.strip())
+            if match:
+                video_id = match.group(1)
+                break
+        
+        if not video_id:
+            logger.warning(f"Could not extract video ID from URL: {youtube_url}")
+            return False
+        
+        logger.debug(f"Extracted video ID for deletion: {video_id}")
+        
+        # Check if video exists
+        result = self.connection.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        
+        if not result:
+            logger.warning(f"Video not found in database: {video_id}")
+            return False
+        
+        # Delete the video
+        self.connection.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        logger.info(f"Successfully deleted video: {video_id}")
+        return True
 
