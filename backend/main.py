@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .services import LocalFileService, HedgeDocService, GitHubService, LLMService, RagService
 from .video_service import VideoService
+from .local_video_service import LocalVideoService
 from .database import DatabaseManager
 from .logging_config import get_logger
 from pydantic import BaseModel
@@ -74,6 +75,7 @@ app.add_middleware(
 # Initialize Services
 # In a real app, config might come from env vars
 DATA_DIR = os.getenv("DATA_DIR", "./data")
+MEDIA_DIR = os.path.join(DATA_DIR, "media")
 DB_PATH = os.path.join(DATA_DIR, "db", "metadata.duckdb")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://host.docker.internal:1234/v1")
 
@@ -88,6 +90,7 @@ llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_fil
 RAG_SERVICE = RagService(base_url=LLM_BASE_URL)
 RAG_SERVICE_IM = RagService(base_url=LLM_BASE_URL, inmemory=True)
 video_service = VideoService(db_manager=db_manager)
+local_video_service = LocalVideoService(storage_dir=MEDIA_DIR, db_manager=db_manager, video_service=video_service)
 
 class HedgeDocRequest(BaseModel):
     url: str
@@ -102,6 +105,9 @@ class HedgeDocHistoryRequest(BaseModel):
 
 class VideoInfoRequest(BaseModel):
     url: str
+
+class LocalVideoIdRequest(BaseModel):
+    video_id: str
 
 @app.get("/")
 def read_root():
@@ -445,5 +451,185 @@ def delete_video(request: VideoInfoRequest):
         raise
     except Exception as e:
         logger.error(f"Failed to delete video {request.url}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Local Video Endpoints
+
+@app.post("/video/local/upload")
+async def upload_local_video(file: UploadFile = File(...)):
+    """Upload a local video file."""
+    logger.info(f"Uploading local video: {file.filename}")
+    
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Create a file-like object
+        import io
+        file_obj = io.BytesIO(file_content)
+        
+        # Upload video
+        result = local_video_service.upload_video(
+            file_obj=file_obj,
+            filename=file.filename,
+            mime_type=file.content_type
+        )
+        
+        if "error" in result:
+            logger.error(f"Video upload failed: {result['error']}")
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        if result.get("duplicate"):
+            logger.info(f"Duplicate video upload detected: {file.filename}")
+            return {
+                "duplicate": True,
+                "message": result["message"],
+                "existing_video": result["existing_video"]
+            }
+        
+        logger.info(f"Video uploaded successfully: {result['id']}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload video {file.filename}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/video/local/info/{video_id}")
+def get_local_video_info(video_id: str):
+    """Get metadata for a local video."""
+    logger.info(f"Fetching local video info: {video_id}")
+    
+    try:
+        video = db_manager.get_local_video_by_id(video_id)
+        
+        if not video:
+            logger.warning(f"Local video not found: {video_id}")
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        logger.info(f"Successfully retrieved local video info: {video_id}")
+        return video
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get video info for {video_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from fastapi.responses import FileResponse, StreamingResponse
+import os
+from pathlib import Path
+
+@app.get("/video/local/stream/{video_id}")
+async def stream_local_video(video_id: str, request: Request):
+    """Stream a local video file with range request support."""
+    logger.info(f"Streaming local video: {video_id}")
+    
+    try:
+        video_path = local_video_service.get_video_path(video_id)
+        
+        if not video_path:
+            logger.warning(f"Video file not found: {video_id}")
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get video metadata for content type
+        video = db_manager.get_local_video_by_id(video_id)
+        
+        # Determine MIME type
+        if video and video.get("mime_type"):
+            media_type = video.get("mime_type")
+        else:
+            # Fallback to extension-based detection
+            ext = Path(video_path).suffix.lower()
+            mime_map = {
+                '.mp4': 'video/mp4',
+                '.webm': 'video/webm',
+                '.ogg': 'video/ogg',
+                '.avi': 'video/x-msvideo',
+                '.mov': 'video/quicktime',
+                '.mkv': 'video/x-matroska',
+            }
+            media_type = mime_map.get(ext, 'video/mp4')
+        
+        logger.info(f"Streaming video file: {video_path} with MIME type: {media_type}")
+        
+        # Use FileResponse which handles range requests automatically
+        return FileResponse(
+            path=video_path,
+            media_type=media_type,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stream video {video_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/video/local/transcribe/{video_id}")
+def transcribe_local_video(video_id: str):
+    """Transcribe a local video using Whisper."""
+    logger.info(f"Transcribing local video: {video_id}")
+    
+    try:
+        result = local_video_service.transcribe_video(video_id)
+        
+        if "error" in result:
+            logger.error(f"Transcription failed: {result['error']}")
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        logger.info(f"Successfully transcribed local video: {video_id}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to transcribe video {video_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/video/local/list")
+def list_local_videos():
+    """Get list of all local videos."""
+    logger.info("Fetching list of all local videos")
+    
+    try:
+        videos = db_manager.get_all_local_videos()
+        logger.info(f"Successfully retrieved {len(videos)} local videos")
+        return {"videos": videos, "count": len(videos)}
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve local video list: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/video/local/delete/{video_id}")
+def delete_local_video(video_id: str):
+    """Delete a local video and its metadata."""
+    logger.info(f"Deleting local video: {video_id}")
+    
+    try:
+        result = local_video_service.delete_video(video_id)
+        
+        if "error" in result:
+            logger.warning(f"Video deletion failed: {result['error']}")
+            raise HTTPException(status_code=404, detail=result["error"])
+        
+        logger.info(f"Successfully deleted local video: {video_id}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete video {video_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
