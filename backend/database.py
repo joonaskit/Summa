@@ -111,6 +111,26 @@ class DatabaseManager:
             )
         """)
         
+        # Create table for local videos
+        logger.debug("Creating local_videos table")
+        self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS local_videos (
+                id VARCHAR PRIMARY KEY,
+                filename VARCHAR NOT NULL,
+                stored_path VARCHAR NOT NULL,
+                file_size BIGINT NOT NULL,
+                file_hash VARCHAR NOT NULL,
+                mime_type VARCHAR,
+                duration FLOAT,
+                width INTEGER,
+                height INTEGER,
+                transcript_text TEXT,
+                created_at TIMESTAMP NOT NULL,
+                transcribed_at TIMESTAMP,
+                UNIQUE(file_hash)
+            )
+        """)
+        
         logger.info("Database schema initialized successfully")
         
     def upsert_file_metadata(self, path: str, filename: str, last_modified: Any, size: int, file_type: str):
@@ -385,5 +405,193 @@ class DatabaseManager:
         # Delete the video
         self.connection.execute("DELETE FROM videos WHERE id = ?", (video_id,))
         logger.info(f"Successfully deleted video: {video_id}")
+        return True
+
+    # Local Video Methods
+    
+    def save_local_video(self, video_id: str, filename: str, stored_path: str, 
+                        file_size: int, file_hash: str, mime_type: Optional[str] = None,
+                        duration: Optional[float] = None, width: Optional[int] = None, 
+                        height: Optional[int] = None) -> bool:
+        """Save local video metadata to database.
+        
+        Args:
+            video_id: Unique identifier (UUID)
+            filename: Original filename
+            stored_path: Path where video is stored
+            file_size: File size in bytes
+            file_hash: SHA-256 hash of file
+            mime_type: Video MIME type
+            duration: Video duration in seconds
+            width: Video width in pixels
+            height: Video height in pixels
+            
+        Returns:
+            bool: True if saved successfully, False if duplicate hash exists
+        """
+        logger.info(f"Saving local video to database: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        import datetime
+        now = datetime.datetime.now()
+        
+        try:
+            self.connection.execute("""
+                INSERT INTO local_videos (id, filename, stored_path, file_size, file_hash, 
+                                         mime_type, duration, width, height, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (video_id, filename, stored_path, file_size, file_hash, 
+                  mime_type, duration, width, height, now))
+            logger.info(f"Local video saved successfully: {video_id}")
+            return True
+        except Exception as e:
+            # Check if it's a duplicate hash error
+            if "UNIQUE constraint" in str(e) or "Constraint Error" in str(e):
+                logger.warning(f"Duplicate video hash detected: {file_hash}")
+                return False
+            else:
+                logger.error(f"Error saving local video: {str(e)}", exc_info=True)
+                raise
+
+    def get_local_video_by_id(self, video_id: str) -> Optional[Dict]:
+        """Retrieve local video metadata by ID.
+        
+        Args:
+            video_id: Video UUID
+            
+        Returns:
+            Dict with video metadata or None if not found
+        """
+        logger.debug(f"Retrieving local video by ID: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        result = self.connection.execute(
+            "SELECT * FROM local_videos WHERE id = ?", (video_id,)
+        ).fetchone()
+        
+        if result:
+            columns = [desc[0] for desc in self.connection.description]
+            video_data = dict(zip(columns, result))
+            logger.debug(f"Local video found: {video_id}")
+            return video_data
+        
+        logger.debug(f"Local video not found: {video_id}")
+        return None
+
+    def get_local_video_by_hash(self, file_hash: str) -> Optional[Dict]:
+        """Retrieve local video metadata by file hash.
+        
+        Args:
+            file_hash: SHA-256 hash of video file
+            
+        Returns:
+            Dict with video metadata or None if not found
+        """
+        logger.debug(f"Retrieving local video by hash: {file_hash[:16]}...")
+        if not self.connection:
+            self.connect()
+        
+        result = self.connection.execute(
+            "SELECT * FROM local_videos WHERE file_hash = ?", (file_hash,)
+        ).fetchone()
+        
+        if result:
+            columns = [desc[0] for desc in self.connection.description]
+            video_data = dict(zip(columns, result))
+            logger.debug(f"Local video found by hash: {video_data['id']}")
+            return video_data
+        
+        logger.debug("No local video found with this hash")
+        return None
+
+    def get_all_local_videos(self) -> List[Dict]:
+        """Retrieve all local videos from database.
+        
+        Returns:
+            List of video metadata dictionaries
+        """
+        logger.debug("Retrieving all local videos from database")
+        if not self.connection:
+            self.connect()
+        
+        results = self.connection.execute("""
+            SELECT id, filename, stored_path, file_size, file_hash, mime_type, 
+                   duration, width, height, transcript_text, created_at, transcribed_at
+            FROM local_videos 
+            ORDER BY created_at DESC
+        """).fetchall()
+        
+        if results:
+            columns = [desc[0] for desc in self.connection.description]
+            videos = [dict(zip(columns, row)) for row in results]
+            logger.debug(f"Found {len(videos)} local videos in database")
+            return videos
+        
+        logger.debug("No local videos found in database")
+        return []
+
+    def update_local_video_transcript(self, video_id: str, transcript: str) -> bool:
+        """Update transcript for a local video.
+        
+        Args:
+            video_id: Video UUID
+            transcript: Transcript text
+            
+        Returns:
+            bool: True if updated successfully, False if video not found
+        """
+        logger.info(f"Updating transcript for local video: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        import datetime
+        now = datetime.datetime.now()
+        
+        # Check if video exists
+        result = self.connection.execute(
+            "SELECT id FROM local_videos WHERE id = ?", (video_id,)
+        ).fetchone()
+        
+        if not result:
+            logger.warning(f"Local video not found for transcript update: {video_id}")
+            return False
+        
+        # Update transcript
+        self.connection.execute("""
+            UPDATE local_videos 
+            SET transcript_text = ?, transcribed_at = ?
+            WHERE id = ?
+        """, (transcript, now, video_id))
+        
+        logger.info(f"Transcript updated successfully for local video: {video_id}")
+        return True
+
+    def delete_local_video(self, video_id: str) -> bool:
+        """Delete local video metadata from database.
+        
+        Args:
+            video_id: Video UUID
+            
+        Returns:
+            bool: True if deleted, False if not found
+        """
+        logger.info(f"Deleting local video from database: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        # Check if video exists
+        result = self.connection.execute(
+            "SELECT id FROM local_videos WHERE id = ?", (video_id,)
+        ).fetchone()
+        
+        if not result:
+            logger.warning(f"Local video not found for deletion: {video_id}")
+            return False
+        
+        # Delete the video
+        self.connection.execute("DELETE FROM local_videos WHERE id = ?", (video_id,))
+        logger.info(f"Successfully deleted local video: {video_id}")
         return True
 
