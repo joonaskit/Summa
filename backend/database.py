@@ -43,17 +43,21 @@ class DatabaseManager:
                 size BIGINT,
                 file_type VARCHAR,
                 hash VARCHAR,
-                tags VARCHAR[]
+                tags VARCHAR[],
+                vectorized_hash VARCHAR
             )
 
         """)
 
-        # Migration: Add tags column if it doesn't exist (for existing DBs)
+        # Migration: Add columns if they don't exist (for existing DBs)
         try:
             columns = [c[1] for c in self.connection.execute("PRAGMA table_info('files_metadata')").fetchall()]
             if 'tags' not in columns:
                 logger.info("Migrating: Adding tags column to files_metadata")
                 self.connection.execute("ALTER TABLE files_metadata ADD COLUMN tags VARCHAR[]")
+            if 'vectorized_hash' not in columns:
+                logger.info("Migrating: Adding vectorized_hash column to files_metadata")
+                self.connection.execute("ALTER TABLE files_metadata ADD COLUMN vectorized_hash VARCHAR")
         except Exception as e:
             logger.warning(f"Migration warning: {e}")
 
@@ -133,22 +137,55 @@ class DatabaseManager:
         
         logger.info("Database schema initialized successfully")
         
-    def upsert_file_metadata(self, path: str, filename: str, last_modified: Any, size: int, file_type: str):
+    def upsert_file_metadata(self, path: str, filename: str, last_modified: Any, size: int, file_type: str, file_hash: Optional[str] = None):
         """Insert or update file metadata."""
         logger.debug(f"Upserting file metadata for: {path}")
         if not self.connection:
             self.connect()
             
         self.connection.execute("""
-            INSERT INTO files_metadata (path, filename, last_modified, size, file_type)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO files_metadata (path, filename, last_modified, size, file_type, hash)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (path) DO UPDATE SET
                 filename = EXCLUDED.filename,
                 last_modified = EXCLUDED.last_modified,
                 size = EXCLUDED.size,
-                file_type = EXCLUDED.file_type
-        """, (path, filename, last_modified, size, file_type))
+                file_type = EXCLUDED.file_type,
+                hash = EXCLUDED.hash
+        """, (path, filename, last_modified, size, file_type, file_hash))
         logger.debug(f"File metadata upserted for: {path}")
+
+    def mark_as_vectorized(self, path: str, file_hash: str) -> bool:
+        """Mark a file as successfully ingested into the RAG vector store.
+
+        Stores the hash of the content that was ingested so that subsequent
+        calls can detect whether the file has changed and needs re-ingestion.
+
+        Args:
+            path: Absolute path of the file.
+            file_hash: Hash of the file content at ingestion time.
+
+        Returns:
+            bool: True if the row was updated, False if the file was not found.
+        """
+        logger.info(f"Marking file as vectorized: {path}")
+        if not self.connection:
+            self.connect()
+
+        result = self.connection.execute(
+            "SELECT path FROM files_metadata WHERE path = ?", (path,)
+        ).fetchone()
+
+        if not result:
+            logger.warning(f"Cannot mark as vectorized – file not in DB: {path}")
+            return False
+
+        self.connection.execute(
+            "UPDATE files_metadata SET vectorized_hash = ? WHERE path = ?",
+            (file_hash, path),
+        )
+        logger.info(f"File marked as vectorized: {path}")
+        return True
 
     def get_file_metadata(self, path: str) -> Optional[Dict]:
         """Retrieve metadata for a specific file."""
