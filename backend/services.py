@@ -1,5 +1,6 @@
 import os
 import glob
+import hashlib
 import requests
 import mimetypes
 from datetime import datetime
@@ -251,20 +252,24 @@ class LocalFileService:
         
         try:
             bytes_written = 0
+            hasher = hashlib.sha256()
             with open(full_path, 'wb') as f:
-                while contents := file_obj.read(1024 * 1024): # Read in chunks
+                while contents := file_obj.read(1024 * 1024):  # Read in chunks
                     f.write(contents)
+                    hasher.update(contents)
                     bytes_written += len(contents)
-            
+            file_hash = hasher.hexdigest()
+
             # Update DB
             if self.db_manager:
-                 stat = os.stat(full_path)
-                 self.db_manager.upsert_file_metadata(
-                    path=safe_name, 
+                stat = os.stat(full_path)
+                self.db_manager.upsert_file_metadata(
+                    path=safe_name,
                     filename=safe_name,
                     last_modified=datetime.now(),
                     size=stat.st_size,
-                    file_type=os.path.splitext(safe_name)[1][1:]
+                    file_type=os.path.splitext(safe_name)[1][1:],
+                    file_hash=file_hash,
                 )
             
             logger.info(f"Successfully saved uploaded file: {safe_name}, size: {bytes_written} bytes")
@@ -639,9 +644,13 @@ class LLMService:
 import backend.utils as utils
 
 class RagService:
-    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False, root_dir: str = None):
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False, root_dir: str = None, db_manager=None):
         logger.info(f"Initializing RagService with base_url: {base_url}, embed_llm: {embed_llm}")
-        self.db_manager = None
+        if db_manager:
+            logger.info("Using provided db_manager - vectorization status will be tracked")
+        else:
+            logger.warning("No db_manager provided - vectorization status will not be tracked")    
+        self.db_manager = db_manager
         # Use provided root_dir or fall back to environment variable or default
         if root_dir is None:
             root_dir = os.getenv("DATA_DIR", "./data")
@@ -673,9 +682,11 @@ class RagService:
         try:
             utils.test_api()
             docs = []
+            file_hashes: dict[str, str] = {}
             for path in paths:
                 logger.debug(f"Ingesting file: {path}")
                 content = utils.get_file_content(path)
+                file_hashes[path] = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
                 doc = Document(
                     page_content=content,
                     metadata={"source": path}
@@ -686,6 +697,13 @@ class RagService:
             logger.debug(f"Split documents into {len(chunks)} chunks")
             document_ids = self.vectorstore.add_documents(chunks)
             logger.info(f"Successfully ingested {len(paths)} files, {len(chunks)} chunks, {len(document_ids)} document IDs")
+
+            # Mark each file as vectorized in the database
+            if self.db_manager:
+                for path in paths:
+                    self.db_manager.mark_as_vectorized(path, file_hashes[path])
+                    logger.debug(f"Marked as vectorized: {path}")
+
             return {
                 "status": "success",
                 "document_ids": document_ids,

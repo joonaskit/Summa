@@ -87,7 +87,7 @@ local_service = LocalFileService(root_dir=DATA_DIR, db_manager=db_manager)
 hedgedoc_service = HedgeDocService()
 github_service = GitHubService()
 llm_service = LLMService(base_url=LLM_BASE_URL, db_manager=db_manager, local_file_service=local_service)
-RAG_SERVICE = RagService(base_url=LLM_BASE_URL)
+RAG_SERVICE = RagService(base_url=LLM_BASE_URL, db_manager=db_manager)
 RAG_SERVICE_IM = RagService(base_url=LLM_BASE_URL, inmemory=True)
 video_service = VideoService(db_manager=db_manager)
 local_video_service = LocalVideoService(storage_dir=MEDIA_DIR, db_manager=db_manager, video_service=video_service)
@@ -121,6 +121,12 @@ def get_local_files():
     files = local_service.list_files()
     logger.debug(f"Found {len(files)} files")
     return files
+
+@app.get("/files/metadata")
+def get_file_metadata(path: str):
+    """Get metadata of a specific file."""
+    logger.info(f"Fetching metadata for file: {path}")
+    return db_manager.get_file_metadata(path)
 
 @app.get("/files/content")
 def get_file_content(path: str):
