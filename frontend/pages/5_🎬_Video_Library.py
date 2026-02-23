@@ -14,17 +14,9 @@ if "youtube_url" not in st.session_state:
 if "video_filter" not in st.session_state:
     st.session_state.video_filter = "All"
 
-@st.cache_data
-def get_video_info(url):
-    response = requests.post(API_URL + "/video/info", json={"url": url})
-    if response.status_code in [200, 201]:
-        data = response.json()
-        return data
-    else:
-        return None
 
 @st.dialog("Confirm Deletion")
-def confirm_delete_youtube(youtube_url, video_title):
+def confirm_delete_youtube(video_id, video_title):
     st.write(f"Are you sure you want to delete **{video_title}**?")
     st.warning("This action cannot be undone.")
     col1, col2 = st.columns(2)
@@ -34,7 +26,7 @@ def confirm_delete_youtube(youtube_url, video_title):
     with col2:
         if st.button("Delete", type="primary"):
             try:
-                resp = requests.delete(f"{API_URL}/video/delete", json={"url": youtube_url})
+                resp = requests.delete(f"{API_URL}/video/delete", params={"id": video_id})
                 if resp.status_code == 200:
                     st.success("Deleted successfully!")
                     st.rerun()
@@ -140,15 +132,26 @@ if st.session_state.video_filter in ["All", "YouTube"] and st.session_state.vide
     
     for video in st.session_state.videos:
         with st.expander(f"▶️ {video['title']}", expanded=False):
-            data = get_video_info(video["youtube_url"])
-            if data:
-                st.caption(f"Author: {data['author']}")
+            data = video["summary_info"]
             st.video(video["youtube_url"])
+            if data:
+                if data["summary_text"]:
+                    with st.expander("Summary", expanded=False):
+                        st.write(data["summary_text"])
+            elif video["transcript_text"]:
+                if st.button("Generate Summary", key=f"summary_{video['id']}"):
+                    with st.status("Generating Summary...") as status:
+                        response = requests.get(API_URL + "/llm/video_summary", params={"content": video["transcript_text"], "id":video["id"]})
+                        if response.status_code in [200, 201]:
+                            status.update(label="Summary generated successfully!", state="complete")
+                            st.rerun()
+                        else:
+                            status.update(label=f"Failed to generate summary: {response.text}", state="error")
             with st.expander("Transcript", expanded=False):
                 st.write(video["transcript_text"])
             st.caption(f"Cached: {video['created_at']}")
             if st.button("Delete", key=video["id"] + "_delete"):
-                confirm_delete_youtube(video["youtube_url"], video["title"])
+                confirm_delete_youtube(video["id"], video["title"])
 
 # Display local videos
 if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_videos:
@@ -157,6 +160,7 @@ if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_
     
     for video in st.session_state.local_videos:
         with st.expander(f"🎬 {video['filename']}", expanded=False):
+            data = video["summary_info"]
             # Display metadata
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -187,14 +191,19 @@ if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_
             if video.get("transcript_text"):
                 with st.expander("Transcript", expanded=False):
                     st.write(video["transcript_text"])
-                if st.button("Summarize", key=video["id"] + "_summarize"):
-                    with st.status("Summarizing....") as status:
-                        response = requests.get(API_URL + "/llm/video_summary", params={"content": video["transcript_text"], "filename": video["filename"]})
-                        if response.status_code == 200:
-                            status.update(label="Video summarized successfully!", state="complete")
-                            st.write(response.text)
-                        else:
-                            status.update(label=f"Failed to summarize video: {response.text}", state="error")
+                if data:
+                    if data["summary_text"]:
+                        with st.expander("Summary", expanded=False):
+                            st.write(data["summary_text"])
+                else:
+                    if st.button("Summarize", key=video["id"] + "_summarize"):
+                        with st.status("Summarizing....") as status:
+                            response = requests.get(API_URL + "/llm/video_summary", params={"content": video["transcript_text"], "id": video["id"]})
+                            if response.status_code == 200:
+                                status.update(label="Video summarized successfully!", state="complete", expanded=True)
+                                st.write(response.text)
+                            else:
+                                status.update(label=f"Failed to summarize video: {response.text}", state="error")
             else:
                 st.caption("Not transcribed")
                 if st.button("Transcribe", key=video["id"] + "_transcribe"):
