@@ -109,6 +109,9 @@ class VideoInfoRequest(BaseModel):
 class LocalVideoIdRequest(BaseModel):
     video_id: str
 
+class VideoSummaryRequest(BaseModel):
+    video_id: str
+
 @app.get("/")
 def read_root():
     logger.debug("Health check endpoint called")
@@ -324,9 +327,21 @@ async def get_summary(content:str, filename:str):
     return StreamingResponse(llm_service.generate_summary_stream(content=content), media_type="text/plain")
 
 @app.get("/llm/video_summary")
-async def get_video_summary(content:str, filename:str):
-    logger.info(f"Generating summary for video: {filename}")
-    return StreamingResponse(llm_service.generate_video_summary_stream(content=content), media_type="text/plain")
+async def get_video_summary(content:str, id:str):
+    logger.info(f"Generating summary for video: {id}")
+
+    async def stream_and_save():
+        accumulated_summary = []
+        stream = llm_service.generate_video_summary_stream(content=content)
+        for chunk in stream:
+            accumulated_summary.append(chunk)
+            yield chunk
+        
+        full_summary = "".join(accumulated_summary)
+        db_manager.save_video_summary(id, full_summary)
+        logger.info(f"Summary saved for video: {id}")
+
+    return StreamingResponse(stream_and_save(), media_type="text/plain")
 
 class QueryRequest(BaseModel):
     query: str
@@ -414,6 +429,8 @@ def list_videos():
     logger.info("Fetching list of all videos")
     try:
         videos = db_manager.get_all_videos()
+        for v in videos:
+            v["summary_info"] = db_manager.get_video_summary(v["id"])
         logger.info(f"Successfully retrieved {len(videos)} videos")
         return {"videos": videos, "count": len(videos)}
     except Exception as e:
@@ -439,24 +456,45 @@ def transcribe_video(request: VideoInfoRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/video/delete")
-def delete_video(request: VideoInfoRequest):
+def delete_video(id:str):
     """Delete a cached video transcript by YouTube URL."""
-    logger.info(f"Deleting cached video: {request.url}")
+    logger.info(f"Deleting cached video: {id}")
     
     try:
-        deleted = db_manager.delete_video_by_url(request.url)
+        deleted = db_manager.delete_yt_video_by_id(id)
         
         if deleted:
-            logger.info(f"Successfully deleted video: {request.url}")
+            logger.info(f"Successfully deleted video: {id}")
             return {"success": True, "message": "Video deleted successfully"}
         else:
-            logger.warning(f"Video not found in cache: {request.url}")
+            logger.warning(f"Video not found in cache: {id}")
             raise HTTPException(status_code=404, detail="Video not found in cache")
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete video {request.url}: {str(e)}", exc_info=True)
+        logger.error(f"Failed to delete video {id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/video/summary")
+def get_video_summary(video_id:str):
+    """Get summary of a specific video."""
+    logger.info(f"Getting summary for video: {video_id}")
+    
+    try:
+        result = db_manager.get_video_summary(video_id)
+        
+        if result:
+            logger.info(f"Successfully retrieved summary for video: {video_id}")
+            return result
+        else:
+            logger.warning(f"Video not found in cache: {video_id}")
+            raise HTTPException(status_code=404, detail="Video not found in cache")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get summary for video {video_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -610,6 +648,8 @@ def list_local_videos():
     
     try:
         videos = db_manager.get_all_local_videos()
+        for v in videos:
+            v["summary_info"] = db_manager.get_video_summary(v["id"])
         logger.info(f"Successfully retrieved {len(videos)} local videos")
         return {"videos": videos, "count": len(videos)}
         
@@ -631,6 +671,7 @@ def delete_local_video(video_id: str):
             raise HTTPException(status_code=404, detail=result["error"])
         
         logger.info(f"Successfully deleted local video: {video_id}")
+        db_manager.delete_video_summary(video_id)
         return result
         
     except HTTPException:

@@ -1,6 +1,7 @@
 import duckdb
 import os
 from typing import Optional, List, Dict, Any
+import datetime
 
 from .logging_config import get_logger
 
@@ -78,7 +79,18 @@ class DatabaseManager:
                 tags VARCHAR[],
                 generated_at TIMESTAMP,
                 model_used VARCHAR
-                -- Removed FOREIGN KEY due to DuckDB strictness on parent updates
+            )
+        """)
+
+        # Create table for video summaries
+        logger.debug("Creating video_summaries table")
+        self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS video_summaries (
+                id VARCHAR PRIMARY KEY,
+                summary_text TEXT,
+                tags VARCHAR[],
+                generated_at TIMESTAMP,
+                model_used VARCHAR
             )
         """)
         
@@ -154,6 +166,33 @@ class DatabaseManager:
                 hash = EXCLUDED.hash
         """, (path, filename, last_modified, size, file_type, file_hash))
         logger.debug(f"File metadata upserted for: {path}")
+    
+    def save_video_summary(self, id: str, summary_text: str):
+        """Save video summary."""
+        logger.debug(f"Saving video summary for: {id}")
+
+
+        if not self.connection:
+            self.connect()
+
+        video_exists = self.connection.execute(
+            "SELECT 1 FROM videos WHERE id = ? UNION SELECT 1 FROM local_videos WHERE id = ?",
+            (id, id)
+        ).fetchone()
+
+        if not video_exists:
+            logger.info(f"Cannot save summary: Video ID {id} not found in database")
+            return
+        else:    
+            self.connection.execute("""
+                INSERT INTO video_summaries (id, summary_text, generated_at, model_used)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    summary_text = EXCLUDED.summary_text,
+                    generated_at = EXCLUDED.generated_at,
+                model_used = EXCLUDED.model_used
+            """, (id, summary_text, datetime.datetime.now(), "local_model"))
+            logger.debug(f"Video summary saved for: {id}")
 
     def mark_as_vectorized(self, path: str, file_hash: str) -> bool:
         """Mark a file as successfully ingested into the RAG vector store.
@@ -211,7 +250,7 @@ class DatabaseManager:
         # But for safety, we could enforce FK constraints or handle it here.
         # Assuming metadata is synced.
         
-        import datetime
+        
         now = datetime.datetime.now()
         
         self.connection.execute("""
@@ -237,6 +276,27 @@ class DatabaseManager:
             return dict(zip(columns, result))
         logger.debug(f"No summary found for: {path}")
         return None
+    
+    def get_video_summary(self, video_id: str) -> Optional[Dict]:
+        """Retrieve summary for a specific video."""
+        logger.debug(f"Retrieving summary for video: {video_id}")
+        if not self.connection:
+            self.connect()
+            
+        result = self.connection.execute("SELECT * FROM video_summaries WHERE id = ?", (video_id,)).fetchone()
+        if result:
+            columns = [desc[0] for desc in self.connection.description]
+            return dict(zip(columns, result))
+        logger.debug(f"No summary found for: {video_id}")
+        return None
+    
+    def delete_video_summary(self, video_id: str):
+        """Delete a summary for a specific video."""
+        logger.debug(f"Deleting summary for video: {video_id}")
+        if not self.connection:
+            self.connect()
+        self.connection.execute("DELETE FROM video_summaries WHERE id = ?", (video_id,))
+        logger.debug(f"Summary deleted for video: {video_id}")
 
     def get_files_with_summaries(self) -> List[str]:
         """Retrieve a list of file paths that have summaries."""
@@ -441,6 +501,25 @@ class DatabaseManager:
         
         # Delete the video
         self.connection.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        logger.info(f"Successfully deleted video: {video_id}")
+        return True
+    
+    def delete_yt_video_by_id(self, video_id: str) -> bool:
+        """Delete a video from the database by video ID."""
+        logger.info(f"Deleting video by ID: {video_id}")
+        if not self.connection:
+            self.connect()
+        
+        # Check if video exists
+        result = self.connection.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        
+        if not result:
+            logger.warning(f"Video not found in database: {video_id}")
+            return False
+        
+        # Delete the video
+        self.connection.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        self.delete_video_summary(video_id)
         logger.info(f"Successfully deleted video: {video_id}")
         return True
 
