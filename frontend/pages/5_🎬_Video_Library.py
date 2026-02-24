@@ -141,7 +141,7 @@ if st.session_state.video_filter in ["All", "YouTube"] and st.session_state.vide
             elif video["transcript_text"]:
                 if st.button("Generate Summary", key=f"summary_{video['id']}"):
                     with st.status("Generating Summary...") as status:
-                        response = requests.get(API_URL + "/llm/video_summary", params={"content": video["transcript_text"], "id":video["id"]})
+                        response = requests.post(API_URL + "/llm/video_summary", json={"content": video["transcript_text"], "id":video["id"]})
                         if response.status_code in [200, 201]:
                             status.update(label="Summary generated successfully!", state="complete")
                             st.rerun()
@@ -198,7 +198,7 @@ if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_
                 else:
                     if st.button("Summarize", key=video["id"] + "_summarize"):
                         with st.status("Summarizing....") as status:
-                            response = requests.get(API_URL + "/llm/video_summary", params={"content": video["transcript_text"], "id": video["id"]})
+                            response = requests.post(API_URL + "/llm/video_summary", json={"content": video["transcript_text"], "id": video["id"]})
                             if response.status_code == 200:
                                 status.update(label="Video summarized successfully!", state="complete", expanded=True)
                                 st.write(response.text)

@@ -326,20 +326,24 @@ async def get_summary(content:str, filename:str):
     logger.info(f"Generating summary for file: {filename}")
     return StreamingResponse(llm_service.generate_summary_stream(content=content), media_type="text/plain")
 
-@app.get("/llm/video_summary")
-async def get_video_summary(content:str, id:str):
-    logger.info(f"Generating summary for video: {id}")
+class VideoSummaryRequest(BaseModel):
+    content:str
+    id:str
+
+@app.post("/llm/video_summary")
+async def get_video_summary(request: VideoSummaryRequest):
+    logger.info(f"Generating summary for video: {request.id}")
 
     async def stream_and_save():
         accumulated_summary = []
-        stream = llm_service.generate_video_summary_stream(content=content)
+        stream = llm_service.generate_video_summary_stream(content=request.content)
         for chunk in stream:
             accumulated_summary.append(chunk)
             yield chunk
         
         full_summary = "".join(accumulated_summary)
-        db_manager.save_video_summary(id, full_summary)
-        logger.info(f"Summary saved for video: {id}")
+        db_manager.save_video_summary(request.id, full_summary)
+        logger.info(f"Summary saved for video: {request.id}")
 
     return StreamingResponse(stream_and_save(), media_type="text/plain")
 
@@ -678,5 +682,19 @@ def delete_local_video(video_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to delete video {video_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/debug/sql")
+def run_sql(sql: str):
+    """Run a SQL query."""
+    logger.info(f"Running SQL query: {sql}")
+    
+    try:
+        result = db_manager.run_sql(sql)
+        logger.info(f"Successfully executed SQL query: {sql}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to execute SQL query: {sql}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

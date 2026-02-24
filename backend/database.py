@@ -710,4 +710,11 @@ class DatabaseManager:
         self.connection.execute("DELETE FROM local_videos WHERE id = ?", (video_id,))
         logger.info(f"Successfully deleted local video: {video_id}")
         return True
+    
+    def run_sql(self, sql: str):
+        """Run a SQL query."""
+        logger.info(f"Running SQL query: {sql}")
+        result = self.connection.execute(sql).fetchall()
+        logger.info(f"Successfully executed SQL query: {sql}")
+        return result
 
