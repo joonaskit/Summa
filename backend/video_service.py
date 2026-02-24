@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Dict, Optional
 from faster_whisper import WhisperModel
 from .logging_config import get_logger
+import multiprocessing
+import datetime
 
 # Initialize logger for this module
 logger = get_logger(__name__)
@@ -30,6 +32,11 @@ class VideoService:
         """
         logger.info("Initializing VideoService")
         self.db_manager = db_manager
+        whisper_model = os.getenv("WHISPER_MODEL", "base")
+        logger.info(f"Loading Whisper model ({whisper_model})")
+        cores = max(1, multiprocessing.cpu_count() // 2)
+        logger.info(f"Using {cores} CPU cores for Whisper model")
+        self.model = WhisperModel(whisper_model, device="cpu", compute_type="int8", cpu_threads=cores)
         
     def _is_valid_youtube_url(self, url: str) -> bool:
         """
@@ -232,25 +239,32 @@ class VideoService:
             raise FileNotFoundError(f"Audio file not found: {file_path}")
         
         try:
-            # Initialize Whisper model (base model for balance of speed/accuracy)
-            # Model will be downloaded on first use (~150MB)
-            whisper_model = os.getenv("WHISPER_MODEL", "base")
-            logger.info(f"Loading Whisper model ({whisper_model})")
-            model = WhisperModel(whisper_model, device="cpu", compute_type="int8")
-            
             # Transcribe the audio
             logger.info("Starting transcription...")
-            segments, info = model.transcribe(file_path, beam_size=5)
+            segments, info = self.model.transcribe(
+                file_path, 
+                beam_size=2,
+                vad_filter=True,
+                vad_parameters=dict(
+                    threshold=0.6,
+                    min_silence_duration_ms=2000, # 2.0 seconds
+                    min_speech_duration_ms=500,   # 0.5 seconds
+                    speech_pad_ms=400             # 0.4 seconds
+                )
+            )
             
             logger.info(f"Detected language: {info.language} with probability {info.language_probability}")
             
             # Combine all segments into full transcript
             transcript_parts = []
             for segment in segments:
-                transcript_parts.append(segment.text)
-                logger.debug(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
+                start_time = str(datetime.timedelta(seconds=int(segment.start)))
+                end_time = str(datetime.timedelta(seconds=int(segment.end)))
+                formatted_segment = f"[{start_time} - {end_time}] {segment.text.strip()}"
+                transcript_parts.append(formatted_segment)
+                logger.debug(formatted_segment)
             
-            full_transcript = " ".join(transcript_parts).strip()
+            full_transcript = "\n".join(transcript_parts).strip()
             
             logger.info(f"Transcription completed. Length: {len(full_transcript)} characters")
             return full_transcript
