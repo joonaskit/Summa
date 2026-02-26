@@ -75,6 +75,7 @@ Stores YouTube video metadata and transcripts.
 | `title` | `VARCHAR` | | Video title |
 | `transcript_text` | `TEXT` | | Full transcript text |
 | `created_at` | `TIMESTAMP` | | When the record was created |
+| `vectorized` | `BOOLEAN` | `DEFAULT FALSE` | Whether the transcript has been ingested into RAG |
 
 ---
 
@@ -96,6 +97,7 @@ Stores metadata for locally uploaded video files.
 | `transcript_text` | `TEXT` | | Transcribed text (Whisper) |
 | `created_at` | `TIMESTAMP` | `NOT NULL` | Record creation time |
 | `transcribed_at` | `TIMESTAMP` | | When transcript was generated |
+| `vectorized` | `BOOLEAN` | `DEFAULT FALSE` | Whether the transcript has been ingested into RAG |
 
 ---
 
