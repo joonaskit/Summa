@@ -623,6 +623,8 @@ class LLMService:
         return {"tags": tags}
 
     def llm_query_with_context(self, query: str, context_text: str):
+        logger.debug(f"LLM query with context: {query}")
+        logger.debug(f"Context text: {context_text}")
         messages = [
             SystemMessage(content=(
                 "You are a helpful assistant specialized in answering questions based solely on the provided text.\n"
@@ -740,12 +742,59 @@ class RagService:
         except Exception as e:
             logger.error(f"Error ingesting uploaded file: {str(e)}", exc_info=True)
             raise e
+            
+    def ingest_video_transcript(self, video_id: str, transcript: str, url: str, title: str = ""):
+        """Ingest a video transcript into the RAG system.
+        
+        Args:
+            video_id: The ID of the video in the database
+            transcript: The full transcript text with timestamps
+            url: The YouTube or local URL of the video
+            title: The title of the video
+        """
+        logger.info(f"Ingesting video transcript for video: {video_id}")
+        logger.debug(f"Transcript: {transcript}")
+        logger.debug(f"Length of transcript: {len(transcript)}")
+        try:
+            doc = Document(
+                page_content=transcript,
+                metadata={
+                    "source": url,
+                    "type": "video_transcript",
+                    "video_id": video_id,
+                    "title": title
+                }
+            )
+            
+            # Split documents
+            chunks = self._split_documents([doc])
+            logger.debug(f"Split video transcript into {len(chunks)} chunks")
+            
+            # Add to vector store
+            document_ids = self.vectorstore.add_documents(chunks)
+            logger.info(f"Successfully ingested video transcript, {len(chunks)} chunks, {len(document_ids)} document IDs")
+            
+            # Mark as vectorized if DB manager is available
+            if self.db_manager:
+                self.db_manager.mark_video_as_vectorized(video_id)
+                logger.debug(f"Marked video as vectorized: {video_id}")
+                
+            return {
+                "status": "success",
+                "document_ids": document_ids,
+                "message": f"Successfully ingested video transcript.",
+                "chunks": len(chunks)
+            }
+        except Exception as e:
+            logger.error(f"Error ingesting video transcript: {str(e)}", exc_info=True)
+            raise e
     
     def _split_documents(self, documents: List[Document]):
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
             length_function=len,
+            separators=["\n\n", "\n", " ", ""],
             is_separator_regex=False,
             add_start_index=True
         )
@@ -760,13 +809,16 @@ class RagService:
     def query_with_context(self, query: str, k: int = 4):
         logger.info(f"RAG query with context: {query[:100]}...")
         results = self._vector_search(query, k=k)
+        for result in results:
+            logger.debug(f"RAG query result file: {result.metadata}")
+            logger.debug(f"RAG query result: {result.page_content}")
         for doc in results:
             doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
         context_text = "\n\n".join([doc.page_content for doc in results])
         logger.debug(f"Context text length: {len(context_text)} chars")
         response = self.llm.llm_query_with_context(query, context_text)
         logger.info("RAG query completed successfully")
-        return response
+        return response, context_text
 
 
 
