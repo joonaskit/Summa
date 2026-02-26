@@ -82,7 +82,7 @@ with tab2:
                         json={"query": prompt}
                         )
                     if response.status_code == 200:
-                        answer = response.json().get('response', 'No response received')
+                        answer = response.json()['result'].get('response', 'No response received')
                         st.session_state.chat_messages.append({"role": "assistant", "content": answer})
                         status.update(label="Done", state="complete")
                         st.rerun()
@@ -117,7 +117,7 @@ with tab2:
                         json={"query": prompt}
                         )
                     if response.status_code == 200:
-                        answer = response.json().get('response', 'No response received')
+                        answer = response.json()["result"].get('response', 'No response received')
                         st.session_state.chat_messages.append({"role": "assistant", "content": answer})
                         status.update(label="Done", state="complete")
                         st.rerun()
@@ -204,6 +204,7 @@ with tab3:
                     )
                     if response.status_code in [200, 201]:
                         status.update(state="complete")
+                        
                         answer = response.json().get('response', 'No response received')
                         st.markdown(answer)
                         st.session_state.conv_log.append({"role": "assistant", "content": answer})
