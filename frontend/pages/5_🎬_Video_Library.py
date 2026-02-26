@@ -138,6 +138,13 @@ if st.session_state.video_filter in ["All", "YouTube"] and st.session_state.vide
                 if data["summary_text"]:
                     with st.expander("Summary", expanded=False):
                         st.write(data["summary_text"])
+                        if st.button("Delete Summary", key=f"delete_summary_{video['id']}"):
+                            response = requests.delete(API_URL + f"/video/delete_summary/{video['id']}")
+                            if response.status_code in [200, 201]:
+                                st.success("Summary deleted successfully!")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to delete summary: {response.text}")
             elif video["transcript_text"]:
                 if st.button("Generate Summary", key=f"summary_{video['id']}"):
                     with st.status("Generating Summary...") as status:
@@ -149,7 +156,23 @@ if st.session_state.video_filter in ["All", "YouTube"] and st.session_state.vide
                             status.update(label=f"Failed to generate summary: {response.text}", state="error")
             with st.expander("Transcript", expanded=False):
                 st.write(video["transcript_text"])
-            st.caption(f"Cached: {video['created_at']}")
+                
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                st.caption(f"Cached: {video['created_at']}")
+            with col_b:
+                if video.get("vectorized"):
+                    st.caption("✅ In Vector DB")
+                else:
+                    if st.button("Ingest to Vector DB", key=f"ingest_{video['id']}"):
+                        with st.status("Ingesting into Vector DB...") as status:
+                            resp = requests.post(f"{API_URL}/video/{video['id']}/ingest")
+                            if resp.status_code in [200, 201]:
+                                status.update(label="Successfully ingested to Vector DB!", state="complete")
+                                st.rerun()
+                            else:
+                                status.update(label=f"Failed to ingest: {resp.text}", state="error")
+                                
             if st.button("Delete", key=video["id"] + "_delete"):
                 confirm_delete_youtube(video["id"], video["title"])
 
@@ -195,6 +218,13 @@ if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_
                     if data["summary_text"]:
                         with st.expander("Summary", expanded=False):
                             st.write(data["summary_text"])
+                            if st.button("Delete Summary", key=f"delete_summary_{video['id']}_{video['filename']}"):
+                                response = requests.delete(API_URL + f"/video/delete_summary/{video['id']}")
+                                if response.status_code in [200, 201]:
+                                    st.success("Summary deleted successfully!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to delete summary: {response.text}")
                 else:
                     if st.button("Summarize", key=video["id"] + "_summarize"):
                         with st.status("Summarizing....") as status:
@@ -215,7 +245,21 @@ if st.session_state.video_filter in ["All", "Local"] and st.session_state.local_
                         else:
                             status.update(label=f"Failed to transcribe video: {response.text}", state="error")
             
-            st.caption(f"Uploaded: {video['created_at']}")
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                st.caption(f"Uploaded: {video['created_at']}")
+            with col_b:
+                if video.get("vectorized"):
+                    st.caption("✅ In Vector DB")
+                elif video.get("transcript_text"):
+                    if st.button("Ingest to Vector DB", key=f"ingest_local_{video['id']}"):
+                        with st.status("Ingesting into Vector DB...") as status:
+                            resp = requests.post(f"{API_URL}/video/{video['id']}/ingest")
+                            if resp.status_code in [200, 201]:
+                                status.update(label="Successfully ingested to Vector DB!", state="complete")
+                                st.rerun()
+                            else:
+                                status.update(label=f"Failed to ingest: {resp.text}", state="error")
             
             # Delete button
             if st.button("Delete", key=video["id"] + "_delete"):
