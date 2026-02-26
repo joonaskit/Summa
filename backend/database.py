@@ -123,9 +123,19 @@ class DatabaseManager:
                 youtube_url VARCHAR NOT NULL,
                 title VARCHAR,
                 transcript_text TEXT,
-                created_at TIMESTAMP
+                created_at TIMESTAMP,
+                vectorized BOOLEAN DEFAULT FALSE
             )
         """)
+        
+        # Migration: Add vectorized to videos
+        try:
+            columns = [c[1] for c in self.connection.execute("PRAGMA table_info('videos')").fetchall()]
+            if 'vectorized' not in columns:
+                logger.info("Migrating: Adding vectorized column to videos")
+                self.connection.execute("ALTER TABLE videos ADD COLUMN vectorized BOOLEAN DEFAULT FALSE")
+        except Exception as e:
+            logger.warning(f"Migration error (videos table): {e}")
         
         # Create table for local videos
         logger.debug("Creating local_videos table")
@@ -143,9 +153,19 @@ class DatabaseManager:
                 transcript_text TEXT,
                 created_at TIMESTAMP NOT NULL,
                 transcribed_at TIMESTAMP,
+                vectorized BOOLEAN DEFAULT FALSE,
                 UNIQUE(file_hash)
             )
         """)
+        
+        # Migration: Add vectorized to local_videos
+        try:
+            columns = [c[1] for c in self.connection.execute("PRAGMA table_info('local_videos')").fetchall()]
+            if 'vectorized' not in columns:
+                logger.info("Migrating: Adding vectorized column to local_videos")
+                self.connection.execute("ALTER TABLE local_videos ADD COLUMN vectorized BOOLEAN DEFAULT FALSE")
+        except Exception as e:
+            logger.warning(f"Migration error (local_videos table): {e}")
         
         logger.info("Database schema initialized successfully")
         
@@ -295,7 +315,7 @@ class DatabaseManager:
         logger.debug(f"Deleting summary for video: {video_id}")
         if not self.connection:
             self.connect()
-        self.connection.execute("DELETE FROM video_summaries WHERE id = ?", (video_id,))
+        result = self.connection.execute("DELETE FROM video_summaries WHERE id = ?", (video_id,))
         logger.debug(f"Summary deleted for video: {video_id}")
 
     def get_files_with_summaries(self) -> List[str]:
@@ -434,6 +454,53 @@ class DatabaseManager:
         logger.debug(f"Video not found in database: {video_id}")
         return None
 
+    def get_video_by_id(self, video_id: str) -> Optional[Dict]:
+        """Retrieve video data by video ID."""
+        logger.debug(f"Retrieving video by ID: {video_id}")
+        if not self.connection:
+            self.connect()
+            
+        result = self.connection.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        
+        if result:
+            columns = [desc[0] for desc in self.connection.description]
+            video_data = dict(zip(columns, result))
+            logger.debug(f"Video found in database: {video_id}")
+            return video_data
+            
+        logger.debug(f"Video not found in database: {video_id}")
+        return None
+
+    def mark_video_as_vectorized(self, video_id: str) -> bool:
+        """Mark a video as vectorized in the database.
+        
+        Args:
+            video_id: Video UUID
+            
+        Returns:
+            bool: True if updated, False if video not found
+        """
+        logger.info(f"Marking video as vectorized: {video_id}")
+        if not self.connection:
+            self.connect()
+
+        # Check in videos
+        result = self.connection.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        if result:
+            self.connection.execute("UPDATE videos SET vectorized = TRUE WHERE id = ?", (video_id,))
+            logger.info(f"Video marked as vectorized: {video_id}")
+            return True
+
+        # Check in local_videos
+        result_local = self.connection.execute("SELECT id FROM local_videos WHERE id = ?", (video_id,)).fetchone()
+        if result_local:
+            self.connection.execute("UPDATE local_videos SET vectorized = TRUE WHERE id = ?", (video_id,))
+            logger.info(f"Local video marked as vectorized: {video_id}")
+            return True
+
+        logger.warning(f"Cannot mark as vectorized - video not found: {video_id}")
+        return False
+
     def get_all_videos(self) -> List[Dict]:
         """Retrieve all videos from the database.
         
@@ -445,7 +512,7 @@ class DatabaseManager:
             self.connect()
         
         results = self.connection.execute(
-            "SELECT id, youtube_url, title, transcript_text, created_at FROM videos ORDER BY created_at DESC"
+            "SELECT * FROM videos ORDER BY created_at DESC"
         ).fetchall()
         
         if results:
@@ -633,8 +700,7 @@ class DatabaseManager:
             self.connect()
         
         results = self.connection.execute("""
-            SELECT id, filename, stored_path, file_size, file_hash, mime_type, 
-                   duration, width, height, transcript_text, created_at, transcribed_at
+            SELECT *
             FROM local_videos 
             ORDER BY created_at DESC
         """).fetchall()
