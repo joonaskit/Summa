@@ -72,8 +72,9 @@ try:
             
             # Row 1: Tags
             selected_filter_tags = []
-            if all_tags:
-                selected_filter_tags = st.pills("Tags", options=all_tags, selection_mode="multi", key="filter_tags")
+            with st.expander("Tags", expanded=False):
+                if all_tags:
+                    selected_filter_tags = st.pills("Tags", options=all_tags, selection_mode="multi", key="filter_tags")
             
             # Row 2: Type and Summary
             c_f1, c_f2 = st.columns(2)
@@ -195,6 +196,27 @@ try:
             # For now, simple list
             for file_data in files:
                 with st.expander(f"{file_data['name']} ({file_data['path']})"):
+                    # Vectorized 
+                    if file_data['vectorized_hash']:
+                        st.caption("Vectorized")
+                        if file_data['vectorized_hash'] != file_data['hash']:
+                            st.caption("File has changed, please re-vectorize")
+                            if st.button("Re-vectorize", key=f"revectorize_{file_data['path']}"):
+                                # TODO: Delete and ingest
+                                with st.status("Vectorizing...") as status:
+                                    requests.post(f"{API_URL}/rag/ingest", json={"paths": [file_data["path"]]})
+                                    status.update(label="Vectorized", state="complete")
+                    else:
+                        st.caption("Not vectorized")
+                        if st.button("Ingest to vector DB", key=f"vectorize_{file_data['path']}"):
+                            # /rag/ingest/ is the endpoint
+                            with st.status("Vectorizing...") as status:
+                                resp = requests.post(f"{API_URL}/rag/ingest", json={"paths": [file_data["path"]]})
+                                if resp.status_code in [200, 201]:
+                                    status.update(label="Vectorized", state="complete")
+                                    st.rerun()
+                                else:
+                                    status.update(label="Vectorization failed", state="error")
                     col1, col2 = st.columns(2)
                     with col1:
                         st.write(f"**Type:** {file_data['type']}")
