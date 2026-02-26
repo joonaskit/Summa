@@ -56,6 +56,67 @@ class LocalFileService:
                     stat = os.stat(full_path)
                     last_modified_dt = datetime.fromtimestamp(stat.st_mtime)
                     file_type = os.path.splitext(file)[1][1:]
+
+                    metadata = self.db_manager.get_file_metadata(rel_path) if self.db_manager else None
+                    if metadata:
+                        logger.info(f"Metadata for file {rel_path} found")
+                        
+                        db_last_modified = metadata['last_modified']
+                        # Compare size and last_modified to avoid recalculating hash
+                        file_changed = False
+                        if metadata['size'] != stat.st_size:
+                            file_changed = True
+                        else:
+                            if isinstance(db_last_modified, datetime):
+                                time_diff = abs((db_last_modified - last_modified_dt).total_seconds())
+                                if time_diff > 1.0:
+                                    file_changed = True
+                            else:
+                                if str(db_last_modified) != last_modified_dt.strftime('%Y-%m-%d %H:%M:%S'):
+                                    file_changed = True
+                        
+                        if file_changed:
+                            logger.info(f"File {rel_path} has changed (size or date), updating metadata")
+                            new_hash = self._calculate_hash(full_path)
+                            self.db_manager.upsert_file_metadata(
+                                path=rel_path,
+                                filename=file,
+                                last_modified=last_modified_dt,
+                                size=stat.st_size,
+                                file_type=file_type,
+                                file_hash=new_hash
+                            )
+                            current_hash = new_hash
+                            current_vec_hash = metadata['vectorized_hash']
+                        else:
+                            current_hash = metadata['hash']
+                            current_vec_hash = metadata['vectorized_hash']
+                            # If hash is missing from metadata, calculate and persist it
+                            if current_hash is None:
+                                logger.info(f"Hash missing for {rel_path}, calculating...")
+                                current_hash = self._calculate_hash(full_path)
+                                self.db_manager.upsert_file_metadata(
+                                    path=rel_path,
+                                    filename=file,
+                                    last_modified=last_modified_dt,
+                                    size=stat.st_size,
+                                    file_type=file_type,
+                                    file_hash=current_hash
+                                )
+                    else:
+                        logger.info(f"Metadata for file {rel_path} not found")
+                        new_hash = self._calculate_hash(full_path)
+                        if self.db_manager:
+                            self.db_manager.upsert_file_metadata(
+                                path=rel_path,
+                                filename=file,
+                                last_modified=last_modified_dt,
+                                size=stat.st_size,
+                                file_type=file_type,
+                                file_hash=new_hash
+                            )
+                        current_hash = new_hash
+                        current_vec_hash = None
                     
                     file_info = {
                         "name": file,
@@ -63,11 +124,15 @@ class LocalFileService:
                         "type": file_type,
                         "size": stat.st_size,
                         "modified": last_modified_dt.strftime('%Y-%m-%d %H:%M:%S'),
-                        "has_summary": rel_path in summaries_set
+                        "has_summary": rel_path in summaries_set,
+                        "hash": current_hash,
+                        "vectorized_hash": current_vec_hash
                     }
                     files_data.append(file_info)
                     
                     # Sync to DB if available
+                    # TODO: File hash?
+                    """
                     if self.db_manager:
                         self.db_manager.upsert_file_metadata(
                             path=rel_path,
@@ -77,8 +142,17 @@ class LocalFileService:
                             file_type=file_type
                         )
                         file_info["tags"] = self.db_manager.get_file_tags(rel_path)
+                    """
+                    
         logger.debug(f"Found {len(files_data)} files")
         return files_data
+
+    def _calculate_hash(self, file_path):
+        hasher = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            while contents := f.read(1024 * 1024):  # Read in chunks
+                hasher.update(contents)
+        return hasher.hexdigest()
 
     def _match_ext(self, filename, extensions):
         # Simplified matcher
@@ -230,12 +304,14 @@ class LocalFileService:
             # Update DB
             if self.db_manager:
                  stat = os.stat(full_path)
+                 new_hash = self._calculate_hash(full_path)
                  self.db_manager.upsert_file_metadata(
                     path=safe_name, # since we save to root of data dir
                     filename=safe_name,
                     last_modified=datetime.now(),
                     size=stat.st_size,
-                    file_type=os.path.splitext(safe_name)[1][1:]
+                    file_type=os.path.splitext(safe_name)[1][1:],
+                    file_hash=new_hash
                 )
 
             logger.info(f"Successfully saved file: {safe_name}, size: {len(content)} chars")
@@ -271,8 +347,10 @@ class LocalFileService:
                     file_type=os.path.splitext(safe_name)[1][1:],
                     file_hash=file_hash,
                 )
+                logger.info(f"File hash: {file_hash} and hash has been saved to DB")
             
             logger.info(f"Successfully saved uploaded file: {safe_name}, size: {bytes_written} bytes")
+
             return {"success": True, "path": safe_name}
         except Exception as e:
             logger.error(f"Failed to save uploaded file {safe_name}: {str(e)}")
