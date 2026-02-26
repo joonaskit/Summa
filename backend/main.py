@@ -360,9 +360,9 @@ def rag_query(request: QueryRequest):
             result = RAG_SERVICE_IM.query_with_context(request.query)
         else:
             logger.info("RAG query (db)")
-            result = RAG_SERVICE.query_with_context(request.query)
+            result, context_text = RAG_SERVICE.query_with_context(request.query)
         logger.info("RAG query completed successfully")
-        return result
+        return {"result": result, "context_text": context_text}
     except Exception as e:
         logger.error(f"RAG query failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -478,6 +478,58 @@ def delete_video(id:str):
         raise
     except Exception as e:
         logger.error(f"Failed to delete video {id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/video/delete_summary/{video_id}")
+def delete_video_summary(video_id: str):
+    """Delete a video summary by video ID."""
+    logger.info(f"Deleting video summary for video: {video_id}")
+    try:
+        db_manager.delete_video_summary(video_id)           
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete video summary for video {video_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video/{video_id}/ingest")
+def ingest_video(video_id: str):
+    """Ingest a video transcript into the Vector DB."""
+    logger.info(f"Ingesting video transcript into RAG: {video_id}")
+    
+    try:
+        # Fetch the video details
+        video = db_manager.get_video_by_id(video_id)
+        if not video:
+            video = db_manager.get_local_video_by_id(video_id)
+            
+        if not video:
+            logger.warning(f"Video not found for ingestion: {video_id}")
+            raise HTTPException(status_code=404, detail="Video not found")
+            
+        transcript = video.get("transcript_text")
+        if not transcript:
+            logger.warning(f"Video has no transcript to ingest: {video_id}")
+            raise HTTPException(status_code=400, detail="Video has no transcript")
+            
+        url = video.get("youtube_url", video.get("filename", "local_file"))
+        title = video.get("title", video.get("filename", "Unknown Title"))
+        
+        # Ingest using RagService
+        result = RAG_SERVICE.ingest_video_transcript(
+            video_id=video_id,
+            transcript=transcript,
+            url=url,
+            title=title
+        )
+        
+        logger.info(f"Successfully ingested video: {video_id}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to ingest video {video_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/video/summary")
