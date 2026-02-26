@@ -170,7 +170,7 @@ class DatabaseManager:
         logger.info("Database schema initialized successfully")
         
     def upsert_file_metadata(self, path: str, filename: str, last_modified: Any, size: int, file_type: str, file_hash: Optional[str] = None):
-        """Insert or update file metadata."""
+        """Insert or update file metadata without losing existing hashes."""
         logger.debug(f"Upserting file metadata for: {path}")
         if not self.connection:
             self.connect()
@@ -183,9 +183,11 @@ class DatabaseManager:
                 last_modified = EXCLUDED.last_modified,
                 size = EXCLUDED.size,
                 file_type = EXCLUDED.file_type,
-                hash = EXCLUDED.hash
+                -- Use new hash if provided, otherwise preserve existing hash
+                hash = COALESCE(EXCLUDED.hash, files_metadata.hash)
         """, (path, filename, last_modified, size, file_type, file_hash))
         logger.debug(f"File metadata upserted for: {path}")
+
     
     def save_video_summary(self, id: str, summary_text: str):
         """Save video summary."""
