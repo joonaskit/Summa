@@ -360,9 +360,10 @@ def rag_query(request: QueryRequest):
             result = RAG_SERVICE_IM.query_with_context(request.query)
         else:
             logger.info("RAG query (db)")
-            result, context_text = RAG_SERVICE.query_with_context(request.query)
+            result, context_text, sources = RAG_SERVICE.query_with_context(request.query)
         logger.info("RAG query completed successfully")
-        return {"result": result, "context_text": context_text}
+        logger.debug(f"Query got sources: {sources}")
+        return {"result": result, "context_text": context_text, "sources": sources}
     except Exception as e:
         logger.error(f"RAG query failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

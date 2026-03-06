@@ -25,6 +25,43 @@ def get_models():
 def get_base_url():
     return os.getenv("LLM_URL", "http://host.docker.internal:1234/v1")
 
+def rag_query(prompt):
+    st.session_state.chat_messages.append({"role": "user", "content": prompt})
+    with st.status("Thinking...") as status:
+        try:
+            response = requests.post(
+                f"{API_URL}/rag/query", 
+                json={"query": prompt}
+            )
+            if response.status_code == 200:
+                answer = response.json()['result'].get('response', 'No response received')
+                sources = response.json().get('sources', [])
+                context = {"answer": answer, "sources": sources}
+                st.session_state.chat_messages.append({"role": "assistant", "content": context})
+                status.update(label="Done", state="complete")
+                st.rerun()
+            else:
+                error_msg = f"❌ Error {response.status_code}: {response.text}"
+                st.error(error_msg)
+                st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
+                status.update(label="Error", state="error")
+        except Exception as e:
+            error_msg = f"❌ Unexpected error: {str(e)}"
+            st.error(error_msg)
+            st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
+            status.update(label="Error", state="error")
+
+def print_chat_history():
+    for message in st.session_state.chat_messages:
+        if message['role'] == "assistant":
+            with st.chat_message(message['role']):
+                st.markdown(message['content']['answer'])
+                st.divider()
+                st.pills("Sources considered", message['content']['sources'], key=f"sources_{message['content']['answer']}")
+        else:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
 with st.expander("Settings", expanded=False):
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -38,9 +75,37 @@ with st.expander("Settings", expanded=False):
             st.session_state["conv_log"] = []
             st.rerun()
 
-tab1, tab2, tab3 = st.tabs(["Ingest", "Chat with a database", "Chat with a file"])
+tab1, tab2, tab3 = st.tabs(["Chat with a database", "Ingest", "Chat with a file"])
+
 
 with tab1:
+    st.markdown("### 💬 Chat with Your Database")
+    st.markdown("Ask questions about the ingested documents and get AI-powered answers.")
+    
+    # Initialize chat history in session state
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+    
+    
+    # Chat messages container with fixed height for better scrolling
+    
+    if len(st.session_state.chat_messages) == 0:
+        # First message
+        prompt = st.chat_input("Ask a question about your documents...", key="question")
+        if prompt: 
+            rag_query(prompt)
+    else:
+        # Display chat history
+        print_chat_history()
+        
+        prompt = st.chat_input("Ask a question about your documents...")
+        if st.button("Clear chat history", help="Clear chat history"):
+            st.session_state.chat_messages = []
+            st.rerun()
+        if prompt:
+            rag_query(prompt)
+
+with tab2:
     with st.expander("Ingest files", expanded=True):
         files = requests.get(f"{API_URL}/files")
         if files.status_code == 200:
@@ -57,81 +122,6 @@ with tab1:
                 else:
                     st.error("Could not start ingestion")
                     st.write(response.json())
-
-with tab2:
-
-    st.markdown("### 💬 Chat with Your Database")
-    st.markdown("Ask questions about the ingested documents and get AI-powered answers.")
-    
-    # Initialize chat history in session state
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = []
-    
-    
-    # Chat messages container with fixed height for better scrolling
-    
-    if len(st.session_state.chat_messages) == 0:
-        # First message
-        prompt = st.chat_input("Ask a question about your documents...", key="question")
-        if prompt: 
-            st.session_state.chat_messages.append({"role": "user", "content": prompt})
-            with st.status("Thinking...") as status:
-                try:
-                    response = requests.post(
-                        f"{API_URL}/rag/query", 
-                        json={"query": prompt}
-                        )
-                    if response.status_code == 200:
-                        answer = response.json()['result'].get('response', 'No response received')
-                        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
-                        status.update(label="Done", state="complete")
-                        st.rerun()
-                    else:
-                        error_msg = f"❌ Error {response.status_code}: {response.text}"
-                        st.error(error_msg)
-                        st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
-                        status.update(label="Error", state="error")
-                except Exception as e:
-                    error_msg = f"❌ Unexpected error: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
-                    status.update(label="Error", state="error")
-    else:
-
-        # Display chat history
-        for message in st.session_state.chat_messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-        
-        prompt = st.chat_input("Ask a question about your documents...")
-        if st.button("Clear chat history", help="Clear chat history"):
-            st.session_state.chat_messages = []
-            st.rerun()
-        if prompt:
-            # Add user message to chat history
-            st.session_state.chat_messages.append({"role": "user", "content": prompt})
-            with st.status("Thinking...") as status:
-                try:
-                    response = requests.post(
-                        f"{API_URL}/rag/query", 
-                        json={"query": prompt}
-                        )
-                    if response.status_code == 200:
-                        answer = response.json()["result"].get('response', 'No response received')
-                        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
-                        status.update(label="Done", state="complete")
-                        st.rerun()
-                    else:
-                        error_msg = f"❌ Error {response.status_code}: {response.text}"
-                        st.error(error_msg)
-                        st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
-                        status.update(label="Error", state="error")
-                except Exception as e:
-                    error_msg = f"❌ Unexpected error: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
-                    status.update(label="Error", state="error")
-
 
 with tab3:
     # Initialize session state for uploader reset
