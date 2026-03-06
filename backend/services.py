@@ -890,13 +890,17 @@ class RagService:
         for result in results:
             logger.debug(f"RAG query result file: {result.metadata}")
             logger.debug(f"RAG query result: {result.page_content}")
+        sources = []
         for doc in results:
             doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
+            if doc.metadata['source'] not in sources:
+                sources.append(doc.metadata['source'])
         context_text = "\n\n".join([doc.page_content for doc in results])
+        logger.debug(f"Sources: {sources}")
         logger.debug(f"Context text length: {len(context_text)} chars")
         response = self.llm.llm_query_with_context(query, context_text)
         logger.info("RAG query completed successfully")
-        return response, context_text
+        return response, context_text, sources
 
 
 
