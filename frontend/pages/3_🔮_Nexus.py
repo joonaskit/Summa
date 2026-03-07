@@ -22,6 +22,67 @@ def get_models():
         st.error(f"Error fetching models: {str(e)}")
         return []
 
+def _get_source_details(source):
+    try:
+        response = requests.get(f"{API_URL}/files/content", params={"path": source['source']})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Error fetching source details: {str(e)}")
+        return None
+
+def _get_source_summary(source):
+    try:
+        response = requests.get(f"{API_URL}/files/summary", params={"path": source['source']})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Error fetching source summary: {str(e)}")
+        return None
+
+def _get_video_summary(source):
+    try:
+        response = requests.get(f"{API_URL}/video/summary", params={"video_id":source['video_id']})
+        if response.status_code in [200, 201]:
+            return response.json()
+        else: 
+            return None
+    except Exception as e:
+        st.error(f"Error fetching video summary: {e}")
+        return None
+
+@st.dialog("Source details", width="medium")
+def source_details(source):
+    content = _get_source_details(source)["content"]
+    with st.expander("Content", expanded=False):
+        st.write(content)
+    try:
+        summary = _get_source_summary(source)["summary_text"]
+    except Exception as e:
+        summary = None
+    if summary:
+        with st.expander("Summary", expanded=False):
+            st.write(summary)
+    else:
+        st.write("No summary available")
+
+@st.dialog("Source details", width="medium")
+def source_video_details(source):
+    st.title(source['title'])
+    st.video(source['source'])
+
+    summary = _get_video_summary(source)
+    if summary:
+        with st.expander("Summary"):
+            st.write(summary['summary_text'])
+    else:
+        st.write("No summary available")
+
+
 def get_base_url():
     return os.getenv("LLM_URL", "http://host.docker.internal:1234/v1")
 
@@ -57,7 +118,18 @@ def print_chat_history():
             with st.chat_message(message['role']):
                 st.markdown(message['content']['answer'])
                 st.divider()
-                st.pills("Sources considered", message['content']['sources'], key=f"sources_{message['content']['answer']}")
+                with st.expander("Sources considered:", expanded=False):
+                    for source in message['content']['sources']:
+                        if "type" in source.keys():
+                            # This is probably a video
+                            # #TODO: Next we need to see if this is a local or youtube
+                            if source["type"] == "video_transcript":
+                                if st.button(source['title'], key=f"source_{source['title']}"):
+                                    source_video_details(source)
+                        elif st.button(source["source"], key=f"source_{source}"):
+                            # Not a video!
+                            source_details(source)
+                # st.session_state.selected_source = st.pills("Sources considered", message['content']['sources'], key=f"sources_{message['content']['answer']}", default=None, selection_mode="single", on_change=source_details)
         else:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
