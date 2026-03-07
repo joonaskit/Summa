@@ -893,8 +893,10 @@ class RagService:
         sources = []
         for doc in results:
             doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
-            if doc.metadata['source'] not in sources:
-                sources.append(doc.metadata['source'])
+            source_duplicates = [source['source'] for source in sources] # TODO: This is inefficient
+            if doc.metadata['source'] not in source_duplicates:
+                sources.append(doc.metadata)
+                logger.debug(f"Metadata: {doc.metadata}")
         context_text = "\n\n".join([doc.page_content for doc in results])
         logger.debug(f"Sources: {sources}")
         logger.debug(f"Context text length: {len(context_text)} chars")
