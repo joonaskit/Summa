@@ -60,10 +60,11 @@ st.title("Video Library")
 # Filter options
 col1, col2 = st.columns([3, 1])
 with col1:
-    st.session_state.video_filter = st.radio(
+    st.session_state.video_filter = st.pills(
         "Filter by type:",
         ["All", "YouTube", "Local"],
-        horizontal=True
+        selection_mode="single",
+        default="All"
     )
 
 with st.expander("Add YouTube Video", expanded=False):
