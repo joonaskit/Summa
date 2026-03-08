@@ -147,10 +147,18 @@ with st.expander("Settings", expanded=False):
         models = get_models()
         st.session_state["model"] = st.selectbox("Model", options=models)
     with c3:
-        rerank = os.getenv("ENABLE_RERANK", "false").lower() == "true"
+        rerank = False
+        try:
+            response = requests.get(API_URL + "/rag/rerank_status")
+            if response.status_code in [200,201]:
+                rerank = response.json()
+            else:
+                st.error(f"Failed to get Cross Encoder status {response.status_code}")
+        except Exception as e:
+            st.error("Failed to get Cross Encoder status")
         if not rerank:
             st.warning("Cross encoder is not in use. Results may wary")
-        st.session_state.multi_query = st.toggle("Use multiquery", value=False, key="Multiquery")
+        st.session_state.multi_query = st.toggle("Use multiquery", value=True, key="Multiquery")
         if st.button("Clear all chat history"):
             st.session_state["chat_messages"] = []
             st.session_state["conv_log"] = []
