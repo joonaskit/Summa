@@ -92,7 +92,10 @@ def rag_query(prompt):
         try:
             response = requests.post(
                 f"{API_URL}/rag/query", 
-                json={"query": prompt}
+                json={
+                    "query": prompt,
+                    "multiquery":st.session_state.multi_query
+                    }
             )
             if response.status_code == 200:
                 answer = response.json()['result'].get('response', 'No response received')
@@ -134,6 +137,8 @@ def print_chat_history():
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
+
+
 with st.expander("Settings", expanded=False):
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -142,12 +147,13 @@ with st.expander("Settings", expanded=False):
         models = get_models()
         st.session_state["model"] = st.selectbox("Model", options=models)
     with c3:
+        st.session_state.multi_query = st.toggle("Use multiquery", value=False, key="Multiquery")
         if st.button("Clear all chat history"):
             st.session_state["chat_messages"] = []
             st.session_state["conv_log"] = []
             st.rerun()
 
-tab1, tab2, tab3 = st.tabs(["Chat with a database", "Ingest", "Chat with a file"])
+tab1, tab2 = st.tabs(["Chat with a database", "Chat with a file"])
 
 
 with tab1:
@@ -157,6 +163,9 @@ with tab1:
     # Initialize chat history in session state
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
+    
+    if "multi_query" not in st.session_state:
+        session_state.multi_query = False
     
     
     # Chat messages container with fixed height for better scrolling
@@ -178,24 +187,6 @@ with tab1:
             rag_query(prompt)
 
 with tab2:
-    with st.expander("Ingest files", expanded=True):
-        files = requests.get(f"{API_URL}/files")
-        if files.status_code == 200:
-            files = [node['path'] for node in files.json()]
-        else:
-            st.error("Could not fetch files")
-        selected_files = list(st.multiselect("Files", options=files, key="files"))
-        if selected_files:
-            st.write(len(selected_files)) #DEBUG
-            if st.button("Ingest"):
-                response = requests.post(f"{API_URL}/rag/ingest", json={"paths": selected_files})
-                if response.status_code in [200, 201]:
-                    st.success("Ingestion done!")
-                else:
-                    st.error("Could not start ingestion")
-                    st.write(response.json())
-
-with tab3:
     # Initialize session state for uploader reset
     if "uploader_key" not in st.session_state:
         st.session_state["uploader_key"] = 0
