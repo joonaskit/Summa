@@ -1011,11 +1011,16 @@ class RagService:
                 self.compressor.top_n = k
                 
                 # compress_documents scores the unique list against the ORIGINAL query
-                final_docs = self.compressor.compress_documents(
-                    documents=unique_candidates, 
-                    query=original_query
-                )
-                logger.info(f"Reranker selected top {len(final_docs)} documents.")
+                try:
+                    final_docs = self.compressor.compress_documents(
+                        documents=unique_candidates, 
+                        query=original_query
+                    )
+                    logger.info(f"Reranker selected top {len(final_docs)} documents.")
+                except Exception as e:
+                    logger.error(f"Reranker failed with: {e}")
+                    logger.error("Fallback to basic vector search")
+                    final_docs = unique_candidates[:k]
             else:
                 # Fallback if reranking is disabled
                 final_docs = unique_candidates[:k]
