@@ -802,6 +802,9 @@ class RagService:
 
 
         logger.info("RagService initialized successfully")
+    
+    def get_rerank_status(self):
+        return self.rerank
 
     def ingest_files(self, paths: List[str]):
         logger.info(f"Ingesting {len(paths)} files into RAG system")

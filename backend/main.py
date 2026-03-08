@@ -382,6 +382,10 @@ def rag_query(request: QueryRequest):
         logger.error(f"RAG query failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/rag/rerank_status")
+def rag_rerank_status():
+    return RAG_SERVICE.get_rerank_status()
+
 @app.post("/rag/query_stream")
 def rag_query_stream(request: QueryRequest):
     logger.info(f"RAG streaming query: {request.query[:100]}...")  # Log first 100 chars
