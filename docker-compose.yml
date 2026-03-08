@@ -15,6 +15,9 @@ services:
       - LLM_URL=http://host.docker.internal:1234/v1
       - CHROMA_DIR=/app/data/chroma
       - WHISPER_MODEL=base
+      - ENABLE_RERANK=true
+      - RERANK_MODEL=BAAI/bge-reranker-base
+      - RERANK_FETCH_K=20
       # Logging configuration
       - LOG_LEVEL=INFO
       - LOG_FORMAT=console
