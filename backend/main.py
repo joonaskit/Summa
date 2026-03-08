@@ -347,20 +347,34 @@ async def get_video_summary(request: VideoSummaryRequest):
 
     return StreamingResponse(stream_and_save(), media_type="text/plain")
 
+@app.get("/debug/multi_query")
+def multi_query(query:str):
+    logger.info(f"Generating multi query for: {query}")
+    return llm_service.multi_query(query=query)
+
 class QueryRequest(BaseModel):
     query: str
     inmemory: Optional[bool] = False
+    multiquery: Optional[bool] = False
 
 @app.post("/rag/query", status_code=status.HTTP_200_OK)
 def rag_query(request: QueryRequest):
     logger.info(f"RAG query: {request.query[:100]}...")  # Log first 100 chars
     try:
         if request.inmemory:
-            logger.info("RAG query (inmemory)")
-            result = RAG_SERVICE_IM.query_with_context(request.query)
+            if request.multiquery:
+                logger.info("RAG multiquery (inmemory)")
+                result = RAG_SERVICE_IM.multi_query_search(request.query)
+            else:
+                logger.info("RAG query (inmemory)")
+                result = RAG_SERVICE_IM.query_with_context(request.query)
         else:
-            logger.info("RAG query (db)")
-            result, context_text, sources = RAG_SERVICE.query_with_context(request.query)
+            if request.multiquery:
+                logger.info("RAG multiquery (db)")
+                result, context_text, sources = RAG_SERVICE.multi_query_search(request.query)
+            else:
+                logger.info("RAG query (db)")
+                result, context_text, sources = RAG_SERVICE.query_with_context(request.query)
         logger.info("RAG query completed successfully")
         logger.debug(f"Query got sources: {sources}")
         return {"result": result, "context_text": context_text, "sources": sources}
