@@ -147,6 +147,9 @@ with st.expander("Settings", expanded=False):
         models = get_models()
         st.session_state["model"] = st.selectbox("Model", options=models)
     with c3:
+        rerank = os.getenv("ENABLE_RERANK", "false").lower() == "true"
+        if not rerank:
+            st.warning("Cross encoder is not in use. Results may wary")
         st.session_state.multi_query = st.toggle("Use multiquery", value=False, key="Multiquery")
         if st.button("Clear all chat history"):
             st.session_state["chat_messages"] = []
