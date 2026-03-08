@@ -8,6 +8,7 @@ import pypdf
 import docx
 from pptx import Presentation
 from fastapi import UploadFile
+import json
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -719,6 +720,34 @@ class LLMService:
             "status": "success",
             "response": response.content.strip()
         }
+
+    def multi_query(self, query:str):
+        logger.debug(f"Starting multi query with: {query}")
+        messages = [
+            SystemMessage(content=(
+                "You are an expert search assistant optimizing information retrieval for a Retrieval-Augmented Generation (RAG) system.\n" 
+                "Your task is to generate exactly 3 to 4 distinct search queries based on the user's original input.\n" 
+                "The original query may be complex, vague, or multi-faceted.\n" 
+                "Your generated queries must capture different semantic angles, synonyms, and underlying intents to maximize the retrieval of relevant documents from a vector database.\n"
+                "Guidelines:\n"
+                "* Deconstruct complex concepts into simpler, targeted search vectors.\n"
+                "* Use alternative vocabulary and phrasing for each query.\n"
+                "* Ensure each query is self-contained and optimized for semantic similarity search.\n"
+                "* Do not attempt to answer the user's query.\n"
+                "* DO NOT ANSWER THE USER'S QUERY or INCLUDE ANSWER IN THE RETURNED STRINGS\n"
+                "Output Format:\n"
+                "Return your results strictly as a valid JSON array of strings. Do not include introductory text, explanations, or formatting blocks outside the JSON array.\n"
+            )),
+            HumanMessage(content=query)
+        ]
+        response = self.llm.invoke(messages)
+        logger.info(f"multi_query results{response.content.strip()}")
+        logger.info(f"multiquery in json {json.loads(response.content.strip())}")
+        return {
+            "status": "success",
+            "response": json.loads(response.content.strip())
+        }
+    
    
 
 import backend.utils as utils
@@ -902,6 +931,37 @@ class RagService:
         logger.debug(f"Context text length: {len(context_text)} chars")
         response = self.llm.llm_query_with_context(query, context_text)
         logger.info("RAG query completed successfully")
+        return response, context_text, sources
+    
+    def _combine_results(self, results: List[List[Document]]):
+        combined_results = []
+        sources = []
+        duplicate_sources = set()
+        for docs in results:
+            for doc in docs:
+                logger.info(type(doc))
+                logger.info(f"Doc: {doc}")
+                if doc.metadata['source'] not in duplicate_sources:
+                    sources.append(doc.metadata)
+                    duplicate_sources.add(doc.metadata['source'])
+                    logger.debug(f"Metadata: {doc.metadata}")
+                doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
+                if doc not in combined_results:
+                    combined_results.append(doc)
+        return combined_results, sources
+    
+    def multi_query_search(self, query: str, k: int = 4):
+        logger.info(f"Multi query search for: {query[:100]}...")
+        queries = self.llm.multi_query(query)['response']
+        logger.info(f"Multi query search returned {len(queries)} results")
+        for query in queries:
+            logger.info(f"Multi query search result: {query}")
+        results = [self._vector_search(query, k=k) for query in queries]
+        combined_results, sources = self._combine_results(results)
+        context_text = "\n\n".join([doc.page_content for doc in combined_results])
+        logger.debug(f"Context text length: {len(context_text)} chars")
+        response = self.llm.llm_query_with_context(query, context_text)
+        logger.info("Multi query search completed successfully")
         return response, context_text, sources
 
 
