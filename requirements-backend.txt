@@ -12,6 +12,9 @@ langchain
 langchain-openai
 langchain-text-splitters
 langchain-chroma
+langchain-community
+langchain-classic
+sentence-transformers
 yt-dlp
 faster-whisper
 ffmpeg-python
