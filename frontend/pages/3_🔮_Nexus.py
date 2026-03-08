@@ -116,7 +116,7 @@ def rag_query(prompt):
             status.update(label="Error", state="error")
 
 def print_chat_history():
-    for message in st.session_state.chat_messages:
+    for i,message in enumerate(st.session_state.chat_messages):
         if message['role'] == "assistant":
             with st.chat_message(message['role']):
                 st.markdown(message['content']['answer'])
@@ -127,9 +127,9 @@ def print_chat_history():
                             # This is probably a video
                             # #TODO: Next we need to see if this is a local or youtube
                             if source["type"] == "video_transcript":
-                                if st.button(source['title'], key=f"source_{source['title']}"):
+                                if st.button(source['title'], key=f"source_{source['title']}#{i}"):
                                     source_video_details(source)
-                        elif st.button(source["source"], key=f"source_{source}"):
+                        elif st.button(source["source"], key=f"source_{source}#{i}"):
                             # Not a video!
                             source_details(source)
                 # st.session_state.selected_source = st.pills("Sources considered", message['content']['sources'], key=f"sources_{message['content']['answer']}", default=None, selection_mode="single", on_change=source_details)

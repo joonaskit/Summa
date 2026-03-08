@@ -784,6 +784,23 @@ class RagService:
                 collection_name="summa_collection"
             )
             logger.info("Using ChromaDB vector store")
+        
+        self.rerank = os.getenv("ENABLE_RERANK", "false").lower() == "true"
+        if self.rerank:
+            self.rerank_model_name = os.getenv("RERANK_MODEL")
+            self.rerank_k = int(os.getenv("RERANK_FETCH_K", "20"))
+            from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
+            from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+            from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+            self.reranker_model = HuggingFaceCrossEncoder(model_name=self.rerank_model_name)
+            self.compressor = CrossEncoderReranker(model=self.reranker_model, top_n=4)
+            self.compression_retriever = ContextualCompressionRetriever(
+                base_compressor=self.compressor,
+                base_retriever=self.vectorstore.as_retriever(search_kwargs={"k":self.rerank_k})
+            )
+            logger.info(f"Using reranker with model {self.rerank_model_name}")
+
+
         logger.info("RagService initialized successfully")
 
     def ingest_files(self, paths: List[str]):
@@ -909,6 +926,10 @@ class RagService:
     
     def _vector_search(self, query: str, k: int = 4):
         logger.debug(f"Performing vector search for query: {query[:100]}..., k={k}")
+        if self.rerank:
+            results = self.compression_retriever.invoke(query)
+            logger.info(f"Reranked search returned {len(results)} results")
+            return results
         results = self.vectorstore.similarity_search(query, k=k)
         logger.debug(f"Vector search returned {len(results)} results")
         return results
@@ -935,34 +956,88 @@ class RagService:
     
     def _combine_results(self, results: List[List[Document]]):
         combined_results = []
+        seen_content = set() # Use content to track unique documents safely
         sources = []
-        duplicate_sources = set()
+        seen_sources = set()
+
         for docs in results:
             for doc in docs:
-                logger.info(type(doc))
-                logger.info(f"Doc: {doc}")
-                if doc.metadata['source'] not in duplicate_sources:
-                    sources.append(doc.metadata)
-                    duplicate_sources.add(doc.metadata['source'])
-                    logger.debug(f"Metadata: {doc.metadata}")
-                doc.page_content = f"{doc.page_content} (Source: {doc.metadata['source']})"
-                if doc not in combined_results:
+                # 1. Deduplicate FIRST based on the raw content
+                if doc.page_content not in seen_content:
+                    seen_content.add(doc.page_content)
+
+                    # 2. Track sources safely
+                    source = doc.metadata.get('source', 'Unknown')
+                    if source not in seen_sources:
+                        sources.append(doc.metadata)
+                        seen_sources.add(source)
+
+                    # 3. Mutate the content ONLY for unique documents
+                    doc.page_content = f"{doc.page_content} (Source: {source})"
                     combined_results.append(doc)
+
         return combined_results, sources
     
-    def multi_query_search(self, query: str, k: int = 4):
-        logger.info(f"Multi query search for: {query[:100]}...")
-        queries = self.llm.multi_query(query)['response']
-        logger.info(f"Multi query search returned {len(queries)} results")
-        for query in queries:
-            logger.info(f"Multi query search result: {query}")
-        results = [self._vector_search(query, k=k) for query in queries]
-        combined_results, sources = self._combine_results(results)
-        context_text = "\n\n".join([doc.page_content for doc in combined_results])
-        logger.debug(f"Context text length: {len(context_text)} chars")
-        response = self.llm.llm_query_with_context(query, context_text)
-        logger.info("Multi query search completed successfully")
-        return response, context_text, sources
+    def multi_query_search(self, original_query: str, k: int = 4):
+            logger.info(f"Multi query search for: {original_query[:100]}...")
+            
+            # 1. Generate sub-queries
+            queries = self.llm.multi_query(original_query).get('response', [])
+            logger.info(f"Generated {len(queries)} sub-queries")
+            
+            # 2. Fetch base documents for ALL sub-queries (Bypassing the reranker)
+            all_base_docs = []
+            for node in queries:
+                # We use similarity_search directly to just get the raw, unranked vectors quickly
+                # Using self.rerank_k to ensure we get a wide enough pool (e.g., 20 per query)
+                fetch_amount = self.rerank_k if hasattr(self, 'rerank_k') else 20
+                docs = self.vectorstore.similarity_search(node, k=fetch_amount)
+                all_base_docs.extend(docs)
+                
+            # 3. Deduplicate the massive candidate pool using raw text hashing
+            unique_candidates = []
+            seen_content = set()
+            
+            for doc in all_base_docs:
+                if doc.page_content not in seen_content:
+                    seen_content.add(doc.page_content)
+                    unique_candidates.append(doc)
+                    
+            logger.info(f"Reduced {len(all_base_docs)} total docs down to {len(unique_candidates)} unique candidates.")
+    
+            # 4. The Heavy Lift: Run the Cross-Encoder ONCE against the combined pool
+            if getattr(self, 'rerank', False) and unique_candidates:
+                # Ensure we only return the final 'k' requested by the user
+                self.compressor.top_n = k
+                
+                # compress_documents scores the unique list against the ORIGINAL query
+                final_docs = self.compressor.compress_documents(
+                    documents=unique_candidates, 
+                    query=original_query
+                )
+                logger.info(f"Reranker selected top {len(final_docs)} documents.")
+            else:
+                # Fallback if reranking is disabled
+                final_docs = unique_candidates[:k]
+    
+            # 5. Format the final output and extract metadata safely
+            sources = []
+            seen_sources = set()
+            
+            for doc in final_docs:
+                source = doc.metadata.get('source', 'Unknown')
+                if source not in seen_sources:
+                    sources.append(doc.metadata)
+                    seen_sources.add(source)
+                    
+                # Now it is safe to mutate the content because deduplication is finished
+                doc.page_content = f"{doc.page_content} (Source: {source})"
+    
+            # 6. Final LLM Generation
+            context_text = "\n\n".join([doc.page_content for doc in final_docs])
+            response = self.llm.llm_query_with_context(original_query, context_text)
+            
+            return response, context_text, sources
 
 
 
