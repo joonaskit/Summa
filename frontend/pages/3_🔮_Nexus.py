@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import os
 import sys
+import json
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -191,9 +192,20 @@ with tab1:
         print_chat_history()
         
         prompt = st.chat_input("Ask a question about your documents...")
-        if st.button("Clear chat history", help="Clear chat history"):
-            st.session_state.chat_messages = []
-            st.rerun()
+        
+        with st.expander("Chat history options", expanded=False):
+            col1,col2 = st.columns(2)
+            with col1: 
+                if st.button("Clear chat history", help="Clear chat history"):
+                    st.session_state.chat_messages = []
+                    st.rerun()
+                if st.download_button("Download chat history", data=json.dumps(st.session_state.chat_messages, indent=4), file_name="chat_history.json"):
+                    st.rerun()
+            with col2:
+                uploaded_chat_history = st.file_uploader("Upload chat history", type=["json"])
+                if uploaded_chat_history:
+                    st.session_state.chat_messages = json.loads(uploaded_chat_history.read())
+                    st.rerun()
         if prompt:
             rag_query(prompt)
 
