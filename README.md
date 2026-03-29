@@ -76,20 +76,31 @@ A document knowledge base and AI assistant. **Summa** helps you consolidate info
 
 ## ⚙️ Configuration
 
-All configuration is handled via environment variables in `docker-compose.yml`.
+Backend configuration is managed via **`backend/settings.json`**. Edit this file to change any setting — no need to touch `docker-compose.yml`.
 
-| Variable | Default | Description |
-|---|---|---|
-| `LLM_URL` | `http://host.docker.internal:1234/v1` | OpenAI-compatible LLM endpoint |
-| `DATA_DIR` | `/app/data` | Persistent data directory |
-| `CHROMA_DIR` | `/app/data/chroma` | ChromaDB storage path |
-| `WHISPER_MODEL` | `base` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
-| `ENABLE_RERANK` | `true` | Enable cross-encoder reranking for RAG |
-| `RERANK_MODEL` | `BAAI/bge-reranker-base` | HuggingFace cross-encoder model name |
-| `RERANK_FETCH_K` | `20` | Number of candidates to fetch before reranking |
-| `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
-| `LOG_FORMAT` | `console` | Log format (`console` or `json`) |
-| `LOG_FILE` | _(unset)_ | Optional path to write logs to a file |
+### `backend/settings.json` reference
+
+| Section | Key | Default | Description |
+|---|---|---|---|
+| `llm` | `LLM_URL` | `http://host.docker.internal:1234/v1` | OpenAI-compatible LLM endpoint |
+| `llm` | `LLM_MODEL` | `Gemma-3-4b-it-GGUF` | Model name passed to the LLM |
+| `llm` | `EMBED_MODEL` | `user.granite-embedding-278m-multilingual-GGUF` | Embedding model name |
+| `llm` | `LLM_TEMPERATURE` | `0.7` | LLM sampling temperature |
+| `api` | `API_URL` | `http://backend:8000` | Internal backend URL |
+| `locations` | `DATA_DIR` | `/app/data` | Persistent data directory |
+| `locations` | `CHROMA_DIR` | `/app/data/chroma` | ChromaDB storage path |
+| `rerank` | `ENABLE_RERANK` | `"true"` | Enable cross-encoder reranking for RAG |
+| `rerank` | `RERANK_MODEL` | `BAAI/bge-reranker-base` | HuggingFace cross-encoder model name |
+| `rerank` | `RERANK_FETCH_K` | `20` | Candidate pool size fetched before reranking |
+| `rerank` | `RERANK_TOP_N` | `4` | Number of results returned after reranking |
+| `rag` | `CHUNK_SIZE` | `1000` | Document chunk size (characters) |
+| `rag` | `CHUNK_OVERLAP` | `200` | Overlap between adjacent chunks |
+| `whisper` | `WHISPER_MODEL` | `base` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
+| `logging` | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `logging` | `LOG_FORMAT` | `console` | Log format (`console` or `json`) |
+| `logging` | `LOG_FILE` | `null` | Optional path to write logs to a file |
+
+> **Note:** The frontend still reads `API_URL` and `LLM_URL` from `docker-compose.yml` environment variables, as Streamlit runs in a separate container without access to `settings.json`.
 
 ## 🛠️ Tech Stack
 
