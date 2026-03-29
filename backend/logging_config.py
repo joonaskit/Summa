@@ -56,10 +56,18 @@ def setup_logging(
         log_format: Format type ('json' or 'console')
         log_file: Optional file path for log output
     """
-    # Get configuration from environment or use defaults
-    log_level = log_level or os.getenv("LOG_LEVEL", "INFO").upper()
-    log_format = log_format or os.getenv("LOG_FORMAT", "console").lower()
-    log_file = log_file or os.getenv("LOG_FILE")
+    # Get configuration from settings.json (imported lazily to avoid circular import)
+    if not log_level or not log_format:
+        try:
+            from backend.config import LOG_LEVEL as _LOG_LEVEL, LOG_FORMAT as _LOG_FORMAT, LOG_FILE as _LOG_FILE
+            log_level = log_level or _LOG_LEVEL.upper()
+            log_format = log_format or _LOG_FORMAT.lower()
+            if log_file is None:
+                log_file = _LOG_FILE
+        except Exception:
+            # Fallback to safe defaults if config is not yet available
+            log_level = log_level or "INFO"
+            log_format = log_format or "console"
     
     # Convert string level to logging constant
     numeric_level = getattr(logging, log_level, logging.INFO)

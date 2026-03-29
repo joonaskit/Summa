@@ -2,12 +2,10 @@ import os
 import requests
 
 from backend.logging_config import get_logger
+from backend.config import LLM_URL, API_URL
 
 # Initialize logger for this module
 logger = get_logger(__name__)
-
-LLM_URL = os.getenv("LLM_URL", "http://host.docker.internal:1234/v1")
-API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
 # Returns a list of available models

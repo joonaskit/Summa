@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from faster_whisper import WhisperModel
 from .logging_config import get_logger
+from .config import WHISPER_MODEL
 import multiprocessing
 import datetime
 
@@ -32,7 +33,7 @@ class VideoService:
         """
         logger.info("Initializing VideoService")
         self.db_manager = db_manager
-        whisper_model = os.getenv("WHISPER_MODEL", "base")
+        whisper_model = WHISPER_MODEL
         logger.info(f"Loading Whisper model ({whisper_model})")
         cores = max(1, multiprocessing.cpu_count() // 2)
         logger.info(f"Using {cores} CPU cores for Whisper model")

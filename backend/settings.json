@@ -1,0 +1,33 @@
+{
+    "llm": {
+        "LLM_URL": "http://host.docker.internal:1234/v1",
+        "LLM_MODEL": "Gemma-3-4b-it-GGUF",
+        "EMBED_MODEL": "text-embedding-granite-embedding-278m-multilingual",
+        "LLM_TEMPERATURE": 0.7
+    },
+    "api": {
+        "API_URL": "http://backend:8000"
+    },
+    "locations": {
+        "DATA_DIR": "/app/data",
+        "CHROMA_DIR": "/app/data/chroma"
+    },
+    "rerank": {
+        "RERANK_MODEL": "BAAI/bge-reranker-base",
+        "RERANK_FETCH_K": 20,
+        "RERANK_TOP_N": 4,
+        "ENABLE_RERANK": "true"
+    },
+    "rag": {
+        "CHUNK_SIZE": 1000,
+        "CHUNK_OVERLAP": 200
+    },
+    "whisper": {
+        "WHISPER_MODEL": "base"
+    },
+    "logging": {
+        "LOG_LEVEL": "INFO",
+        "LOG_FORMAT": "console",
+        "LOG_FILE": null
+    }
+}

@@ -507,12 +507,12 @@ class LLMService:
         self.base_url = base_url
         self.db_manager = db_manager
         self.local_file_service = local_file_service
-        logger.info(f"Initializing LLMService with base_url: {base_url}")
+        logger.info(f"Initializing LLMService with base_url: {self.base_url}")
         self.llm = ChatOpenAI(
             base_url=self.base_url,
             api_key="lm-studio",
-            model="local-model", # Uses default model from LM Studio at this time. TODO: make configurable
-            temperature=0.7
+            model=LLM_MODEL,
+            temperature=LLM_TEMPERATURE
         )
         logger.info("LLMService initialized successfully")
     
@@ -751,20 +751,25 @@ class LLMService:
    
 
 import backend.utils as utils
+from backend.config import DATA_DIR, CHROMA_DIR, ENABLE_RERANK, RERANK_MODEL, RERANK_FETCH_K, RERANK_TOP_N, LLM_MODEL, LLM_TEMPERATURE, EMBED_MODEL, CHUNK_SIZE, CHUNK_OVERLAP
 
 class RagService:
-    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = "text-embedding-granite-embedding-278m-multilingual", debug: bool = True, inmemory: bool = False, root_dir: str = None, db_manager=None):
-        logger.info(f"Initializing RagService with base_url: {base_url}, embed_llm: {embed_llm}")
+    def __init__(self, base_url: str = "http://host.docker.internal:1234/v1", embed_llm: str = None, debug: bool = True, inmemory: bool = False, root_dir: str = None, db_manager=None):
+        logger.info(f"Initializing RagService")
         if db_manager:
             logger.info("Using provided db_manager - vectorization status will be tracked")
         else:
             logger.warning("No db_manager provided - vectorization status will not be tracked")    
         self.db_manager = db_manager
-        # Use provided root_dir or fall back to environment variable or default
+        # Use provided root_dir or fall back to settings.json config
         if root_dir is None:
-            root_dir = os.getenv("DATA_DIR", "./data")
+            root_dir = DATA_DIR
+        # Use provided embed_llm or fall back to settings.json config
+        if embed_llm is None:
+            embed_llm = EMBED_MODEL
         self.local_file_service = LocalFileService(root_dir=root_dir)
-        self.base_url = base_url # TODO: Use environment variables
+        self.base_url = base_url
+        logger.info(f"Rag base_url: {self.base_url}")
         self.embed_llm = embed_llm # TODO: Use environment variables or keep as user choice?
         self.embedder = OpenAIEmbeddings(
             base_url=self.base_url,
@@ -777,23 +782,22 @@ class RagService:
             self.vectorstore = InMemoryVectorStore(self.embedder)
             logger.info("Using in-memory vector store")
         else:
-            chroma_base_dir = os.getenv("CHROMA_DIR", "/app/data/chroma")
             self.vectorstore = Chroma(
-                persist_directory=chroma_base_dir, 
+                persist_directory=CHROMA_DIR, 
                 embedding_function=self.embedder,
                 collection_name="summa_collection"
             )
             logger.info("Using ChromaDB vector store")
         
-        self.rerank = os.getenv("ENABLE_RERANK", "false").lower() == "true"
+        self.rerank = ENABLE_RERANK
         if self.rerank:
-            self.rerank_model_name = os.getenv("RERANK_MODEL")
-            self.rerank_k = int(os.getenv("RERANK_FETCH_K", "20"))
+            self.rerank_model_name = RERANK_MODEL
+            self.rerank_k = RERANK_FETCH_K
             from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
             from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
             from langchain_community.cross_encoders import HuggingFaceCrossEncoder
             self.reranker_model = HuggingFaceCrossEncoder(model_name=self.rerank_model_name)
-            self.compressor = CrossEncoderReranker(model=self.reranker_model, top_n=4)
+            self.compressor = CrossEncoderReranker(model=self.reranker_model, top_n=RERANK_TOP_N)
             self.compression_retriever = ContextualCompressionRetriever(
                 base_compressor=self.compressor,
                 base_retriever=self.vectorstore.as_retriever(search_kwargs={"k":self.rerank_k})
@@ -918,8 +922,8 @@ class RagService:
     
     def _split_documents(self, documents: List[Document]):
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP,
             length_function=len,
             separators=["\n\n", "\n", " ", ""],
             is_separator_regex=False,

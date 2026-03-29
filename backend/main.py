@@ -8,6 +8,7 @@ from .logging_config import get_logger
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+from .config import DATA_DIR, LLM_URL as LLM_BASE_URL
 import time
 
 from contextlib import asynccontextmanager
@@ -73,11 +74,9 @@ app.add_middleware(
 )
 
 # Initialize Services
-# In a real app, config might come from env vars
-DATA_DIR = os.getenv("DATA_DIR", "./data")
+# Config is loaded from backend/settings.json via config.py
 MEDIA_DIR = os.path.join(DATA_DIR, "media")
 DB_PATH = os.path.join(DATA_DIR, "db", "metadata.duckdb")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://host.docker.internal:1234/v1")
 
 # Initialize Database
 db_manager = DatabaseManager(DB_PATH)
@@ -769,3 +768,47 @@ def run_sql(sql: str):
         logger.error(f"Failed to execute SQL query: {sql}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ---------------------------------------------------------------------------
+# Settings endpoints
+# ---------------------------------------------------------------------------
+
+import json as _json
+import importlib
+from .config import _SETTINGS_PATH
+import backend.config as _config_module
+
+
+@app.get("/settings")
+def get_settings():
+    """Return the current contents of settings.json."""
+    logger.debug("Fetching settings")
+    try:
+        with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/settings")
+def update_settings(body: dict):
+    """Write new settings to settings.json and reload config constants."""
+    logger.info("Updating settings")
+    required_sections = {"llm", "api", "locations", "rerank", "rag", "whisper", "logging"}
+    missing = required_sections - body.keys()
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required sections: {', '.join(sorted(missing))}"
+        )
+    try:
+        with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            _json.dump(body, f, indent=4)
+        # Reload config module so module-level constants are updated
+        importlib.reload(_config_module)
+        logger.info("Settings updated and config reloaded successfully")
+        return {"status": "ok", "message": "Settings saved. Services that read config at startup require a restart to pick up changes."}
+    except Exception as e:
+        logger.error(f"Failed to write settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
